@@ -1,6 +1,6 @@
 ---
 name: cx-olly
-description: This skill should be used when the user asks to "chat with AI", "ask Olly", "ask the agent", "send message to AI", "continue a chat", "follow up on chat", "get artifact", "download artifact", "list artifacts", "retrieve generated content", "AI-generated charts", "AI analysis", "conversational observability", "natural language query", or wants to interact with the Coralogix Observability Agent (Olly) using the cx CLI.
+description: This skill should be used when the user asks to "chat with AI", "ask Olly", "ask the agent", "send message to AI", "continue a chat", "follow up on chat", "get artifact", "download artifact", "list artifacts", "retrieve generated content", "AI-generated charts", "AI analysis", "conversational observability", "natural language query", "Olly rules", "list Olly rules", "add a rule for Olly", "team rules", "custom instructions for Olly", or wants to interact with the Coralogix Observability Agent (Olly) using the cx CLI.
 metadata:
   version: "0.1.0"
 ---
@@ -16,8 +16,14 @@ Use this skill to interact with Coralogix's Observability Agent (Olly) via the `
 | Command | Purpose | Key flags |
 |---|---|---|
 | `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--timeout`, `--agent-to-agent-mode` |
-| `cx olly artifacts list` | List all generated artifacts | - |
+| `cx olly artifacts list` | List generated artifacts, newest first | `--chat-id`, `--type`, `--start`/`--end` (creation time), `--limit`, `--offset` |
 | `cx olly artifacts get <id>` | Get artifact content by ID | - |
+| `cx olly rules list` | List rules | `--team` |
+| `cx olly rules get <rule-id>` | Show one rule with its full text | `--team` |
+| `cx olly rules create --rule <text>` | Create a rule | `--team`, `--yes` |
+| `cx olly rules update <rule-id> --rule <text>` | Replace a rule's text | `--team`, `--yes` |
+| `cx olly rules enable <rule-id>` / `disable <rule-id>` | Turn a rule on or off | `--team`, `--yes` |
+| `cx olly rules delete <rule-id>` | Delete a rule | `--team`, `--yes` |
 
 **Output format:** append `-o json` or `-o toon` for machine-readable output.
 
@@ -83,12 +89,26 @@ cx olly ask "Analyze this for me" --agent-to-agent-mode
 
 Olly can generate artifacts like query results, previews, and citations. Artifact IDs appear as links in the agent's response text.
 
-### List all artifacts
+### List artifacts
 
 ```bash
 cx olly artifacts list
 cx olly artifacts list -o json
+cx olly artifacts list --chat-id <chat-id>
+cx olly artifacts list --type coralogix_metrics --start now-1d
+cx olly artifacts list --limit 5 --offset 5
 ```
+
+With no flags it returns the newest 100 artifacts across all chats. Narrow it with:
+
+| Flag | Meaning |
+|---|---|
+| `--chat-id <id>` | Only artifacts from one chat (the chat ID that `cx olly ask` prints) |
+| `--type <type>` | One of `coralogix_dataprime`, `coralogix_metrics`, `kubernetes_query_results`, `alert_watch_data`, `github_file_content`, `sandbox_generated_file`, `schema_health_suggestions` |
+| `--start <time>` / `--end <time>` | Creation time window, inclusive. ISO 8601 or relative (`now-1h`) |
+| `--limit <n>` / `--offset <n>` | Paging. `--limit 5 --offset 5` is the second page of five |
+
+Each row has `id`, `type`, `chat_id`, `chat_title`, `chat_type`, `interaction_id` and `created_at`. The list carries no content. Use `artifacts get <id>` for the content.
 
 ### Get artifact content
 
@@ -108,6 +128,41 @@ Output behavior:
 - **JSON content**: Displayed directly, or spilled to file if large
 - **Text content**: Saved to temp file (e.g., `/tmp/cx_results_artifact_<id>_<hash>.txt`)
 
+## Rules
+
+Rules are instructions Olly follows when it answers. Personal rules apply to your own chats. Team rules apply to everyone on the team. Without `--team` the commands act on personal rules; with `--team` they act on team rules.
+
+### List and read rules
+
+```bash
+cx olly rules list
+cx olly rules list --team -o json
+cx olly rules get <rule-id>
+cx olly rules get <rule-id> --team -o json
+```
+
+A rule has `id`, `rule` (the text), `enabled` and `created_at`. The `list` table cuts long rule text; `-o json` and `rules get` show the full text.
+
+### Create and change rules
+
+```bash
+cx olly rules create --rule "Answer in English" --yes
+cx olly rules create --rule "Always link the runbook" --team --yes
+cat rule.txt | cx olly rules create --rule - --yes
+cx olly rules update <rule-id> --rule "Answer in English, briefly" --yes
+cx olly rules disable <rule-id> --team --yes
+cx olly rules enable <rule-id> --team --yes
+cx olly rules delete <rule-id> --yes
+```
+
+- `--rule -` reads the rule text from stdin.
+- `create`, `update`, `enable`, `disable` and `delete` ask for confirmation. In agent mode they fail without `--yes`: ask the user to confirm, then re-run with `--yes`. `--read-only` blocks all five.
+- `create` and `update` print the rule with `-o json`, so the new rule's `id` can be read from the output.
+- **422** means Olly rejected the rule text (it looks like a prompt injection or contains foul language). The error shows Olly's reason.
+- **403 on personal rules** usually means the profile uses a team API key. Personal rules need a personal API key or a logged-in profile. Team rules work with any API key that has the permissions below.
+- **Team rule permissions:** reading needs `olly-team-rules:Read` or `olly-team-rules:Manage`; writing needs `olly-team-rules:Manage`.
+- **Disabled team rules** are visible only with `olly-team-rules:Manage`. Without it, `list` leaves them out and `get` returns 404.
+
 ## Workflow Examples
 
 ### Investigate an issue
@@ -117,10 +172,10 @@ Output behavior:
 cx olly ask "Why is the checkout service showing high latency? Check logs with 'checkout:' strings and aws related metrics" --agent-to-agent-mode
 
 # Follow up with the chat ID from the response — also background and poll
-cx olly ask "What changed in the last hour?" --chat-id abc-123-def --agent-to-agent-mode
+cx olly ask "What changed in the last hour?" --chat-id 3f2b8c1e-7a4d-4e9b-9c2a-1d5e6f7a8b9c --agent-to-agent-mode
 
 # Once the interaction has completed, get any generated charts
-cx olly artifacts list -o json | jq '.[0].id'
+cx olly artifacts list --chat-id 3f2b8c1e-7a4d-4e9b-9c2a-1d5e6f7a8b9c -o json | jq -r '.[].id'
 cx olly artifacts get <artifact-id>
 ```
 
@@ -131,7 +186,7 @@ cx olly artifacts get <artifact-id>
 cx olly ask "List top 5 error messages" -o json --agent-to-agent-mode | jq '.response'
 
 # Parse artifacts
-cx olly artifacts list -o json | jq '.[] | {id, filename, created_at}'
+cx olly artifacts list -o json | jq '.[] | {id, type, chat_title, created_at}'
 ```
 
 ### Detailed analysis with specific model

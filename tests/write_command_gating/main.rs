@@ -346,3 +346,40 @@ fn product_analytics_settings_update() {
         "product-analytics settings update",
     );
 }
+
+#[test]
+fn olly_rules_writes() {
+    for args in [
+        &["olly", "rules", "create", "--rule", "x"][..],
+        &[
+            "olly",
+            "rules",
+            "update",
+            "11111111-1111-4111-8111-111111111111",
+            "--rule",
+            "x",
+        ],
+        &[
+            "olly",
+            "rules",
+            "enable",
+            "11111111-1111-4111-8111-111111111111",
+        ],
+        &[
+            "olly",
+            "rules",
+            "disable",
+            "11111111-1111-4111-8111-111111111111",
+            "--team",
+        ],
+        &[
+            "olly",
+            "rules",
+            "delete",
+            "11111111-1111-4111-8111-111111111111",
+            "--team",
+        ],
+    ] {
+        assert_gated(args, &args.join(" "));
+    }
+}

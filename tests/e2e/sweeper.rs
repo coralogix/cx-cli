@@ -154,6 +154,18 @@ const SWEEPABLES: &[Sweepable] = &[
         list: &["iam", "groups", "list"],
         delete: &["iam", "groups", "delete"],
     },
+    // Olly rules have no name; the unique name is the rule text. A personal
+    // rules list is a 403 for a team API key, which skips that entry.
+    Sweepable {
+        label: "olly team rules",
+        list: &["olly", "rules", "list", "--team"],
+        delete: &["olly", "rules", "delete", "--team"],
+    },
+    Sweepable {
+        label: "olly personal rules",
+        list: &["olly", "rules", "list"],
+        delete: &["olly", "rules", "delete"],
+    },
 ];
 // Not sweepable: AI Center evaluations carry no name (only application,
 // subsystem, target), so a leaked one cannot be told apart from a real one.
@@ -228,8 +240,10 @@ fn sweep_stale_e2e_resources() {
             continue;
         };
         for item in items(&v) {
-            let Some(name) = str_field(&item, &["name", "display_name", "displayName", "title"])
-            else {
+            let Some(name) = str_field(
+                &item,
+                &["name", "display_name", "displayName", "title", "rule"],
+            ) else {
                 continue;
             };
             if !sweeps(name) {

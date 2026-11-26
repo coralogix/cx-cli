@@ -213,8 +213,8 @@ pub struct Config {
     #[serde(default = "default_true")]
     pub allow_risky_commands: bool,
 
-    /// Whether the Olly AI assistant (`olly ask`) is enabled.
-    /// When false, `olly ask` is blocked.
+    /// Whether the Olly AI assistant is enabled.
+    /// When false, every `cx olly` command is blocked.
     #[serde(default = "default_true")]
     pub olly_enabled: bool,
 

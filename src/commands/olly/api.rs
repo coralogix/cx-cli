@@ -165,8 +165,42 @@ pub struct Artifact {
     pub filename: Option<String>,
     pub content_type: Option<String>,
     pub size: Option<u64>,
+}
+
+/// One row of `GET /artifacts/`. The list response carries no download URL or
+/// query params; those come from `get_artifact`.
+#[derive(Debug, Deserialize)]
+pub struct ArtifactListItem {
+    pub id: Option<String>,
     pub created_at: Option<String>,
+    #[serde(rename = "type")]
     pub artifact_type: Option<String>,
+    pub chat_id: Option<String>,
+    pub chat_title: Option<String>,
+    pub chat_type: Option<String>,
+    pub interaction_id: Option<String>,
+}
+
+/// Values the server accepts for the `artifact_type` filter.
+pub const ARTIFACT_TYPES: [&str; 7] = [
+    "coralogix_dataprime",
+    "coralogix_metrics",
+    "kubernetes_query_results",
+    "alert_watch_data",
+    "github_file_content",
+    "sandbox_generated_file",
+    "schema_health_suggestions",
+];
+
+/// Filters for `list_artifacts`. `start` and `end` are ISO 8601 timestamps.
+#[derive(Debug, Default)]
+pub struct ArtifactListFilters {
+    pub chat_id: Option<String>,
+    pub artifact_type: Option<String>,
+    pub start: Option<String>,
+    pub end: Option<String>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
 }
 
 // ── API client ─────────────────────────────────────────────────────────────────
@@ -239,14 +273,154 @@ impl OllyApi {
 
     // ── Artifacts ──────────────────────────────────────────────────────────────
 
-    pub async fn list_artifacts(&self) -> Result<Vec<Artifact>> {
+    /// List artifacts, newest first. Only the filters that are set are sent.
+    pub async fn list_artifacts(
+        &self,
+        filters: &ArtifactListFilters,
+    ) -> Result<Vec<ArtifactListItem>> {
         let path = format!("{ARTIFACTS_BASE}/");
-        self.client.get(&path, &[]).await
+        let limit = filters.limit.map(|n| n.to_string());
+        let offset = filters.offset.map(|n| n.to_string());
+        let params: Vec<(&str, &str)> = [
+            ("chat_id", filters.chat_id.as_deref()),
+            ("artifact_type", filters.artifact_type.as_deref()),
+            ("start_time", filters.start.as_deref()),
+            ("end_time", filters.end.as_deref()),
+            ("limit", limit.as_deref()),
+            ("offset", offset.as_deref()),
+        ]
+        .into_iter()
+        .filter_map(|(name, value)| value.map(|v| (name, v)))
+        .collect();
+        self.client.get(&path, &params).await
     }
 
     pub async fn get_artifact(&self, artifact_id: &str) -> Result<Artifact> {
         let path = format!("{ARTIFACTS_BASE}/{artifact_id}");
         self.client.get(&path, &[]).await
+    }
+}
+
+// ── Rules ──────────────────────────────────────────────────────────────────────
+
+const USER_RULES_BASE: &str = "/api/v2/olly/user-rules";
+const TEAM_RULES_BASE: &str = "/api/v2/olly/team-rules";
+
+/// Whose rules a command acts on. Personal rules apply to the caller's own
+/// chats; team rules apply to everyone on the team.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuleScope {
+    Personal,
+    Team,
+}
+
+impl RuleScope {
+    pub fn from_team_flag(team: bool) -> Self {
+        if team {
+            Self::Team
+        } else {
+            Self::Personal
+        }
+    }
+
+    /// The word used for this scope in messages: `personal` or `team`.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Personal => "personal",
+            Self::Team => "team",
+        }
+    }
+
+    fn base(self) -> &'static str {
+        match self {
+            Self::Personal => USER_RULES_BASE,
+            Self::Team => TEAM_RULES_BASE,
+        }
+    }
+}
+
+/// Rules are returned as the API sends them: `{id, rule, enabled, created_at}`.
+impl OllyApi {
+    /// Team rules that are disabled are listed only for callers with
+    /// `olly-team-rules:Manage`.
+    pub async fn list_rules(&self, scope: RuleScope) -> Result<Vec<Value>> {
+        self.client.get(&format!("{}/", scope.base()), &[]).await
+    }
+
+    pub async fn get_rule(&self, scope: RuleScope, rule_id: &str) -> Result<Value> {
+        let path = format!("{}/{rule_id}", scope.base());
+        self.client.get(&path, &[]).await
+    }
+
+    /// The API checks the text for prompt injection and foul language and
+    /// answers 422 with its reason when the check fails.
+    pub async fn create_rule(&self, scope: RuleScope, rule: &str) -> Result<Value> {
+        self.client
+            .post(&format!("{}/", scope.base()), &json!({ "rule": rule }))
+            .await
+    }
+
+    /// Change the text, the enabled state, or both. The API rejects a body
+    /// with neither.
+    pub async fn update_rule(
+        &self,
+        scope: RuleScope,
+        rule_id: &str,
+        rule: Option<&str>,
+        enabled: Option<bool>,
+    ) -> Result<Value> {
+        let path = format!("{}/{rule_id}", scope.base());
+        self.client
+            .put(&path, &rule_update_body(rule, enabled))
+            .await
+    }
+
+    pub async fn delete_rule(&self, scope: RuleScope, rule_id: &str) -> Result<()> {
+        let path = format!("{}/{rule_id}", scope.base());
+        let _: Value = self.client.delete(&path).await?;
+        Ok(())
+    }
+}
+
+/// Only the fields that were given, so an enable or disable never resends
+/// (and never re-validates) the rule text.
+fn rule_update_body(rule: Option<&str>, enabled: Option<bool>) -> Value {
+    let mut body = json!({});
+    if let Some(rule) = rule {
+        body["rule"] = json!(rule);
+    }
+    if let Some(enabled) = enabled {
+        body["enabled"] = json!(enabled);
+    }
+    body
+}
+
+#[cfg(test)]
+mod rules_tests {
+    use super::*;
+
+    #[test]
+    fn scope_follows_the_team_flag() {
+        assert_eq!(RuleScope::from_team_flag(false), RuleScope::Personal);
+        assert_eq!(RuleScope::from_team_flag(true), RuleScope::Team);
+        assert_eq!(RuleScope::Personal.base(), "/api/v2/olly/user-rules");
+        assert_eq!(RuleScope::Team.base(), "/api/v2/olly/team-rules");
+    }
+
+    #[test]
+    fn update_body_holds_only_the_given_fields() {
+        assert_eq!(
+            rule_update_body(Some("Answer in English"), None),
+            json!({"rule": "Answer in English"})
+        );
+        assert_eq!(
+            rule_update_body(None, Some(false)),
+            json!({"enabled": false})
+        );
+        assert_eq!(
+            rule_update_body(Some("x"), Some(true)),
+            json!({"rule": "x", "enabled": true})
+        );
     }
 }
 
@@ -456,6 +630,40 @@ mod tests {
         let artifact: Artifact = serde_json::from_value(json).unwrap();
         assert!(artifact.id.is_none());
         assert!(artifact.download_url.is_none());
+    }
+
+    #[test]
+    fn deserialize_artifact_list_item() {
+        let json = json!({
+            "id": "artifact-123",
+            "created_at": "2026-01-02T03:04:05.000000Z",
+            "is_user_managed": false,
+            "chat_id": "chat-123",
+            "type": "coralogix_metrics",
+            "interaction_id": "interaction-123",
+            "data_source_id": null,
+            "chat_title": "Checkout latency",
+            "chat_type": "api"
+        });
+        let item: ArtifactListItem = serde_json::from_value(json).unwrap();
+        assert_eq!(item.id.as_deref(), Some("artifact-123"));
+        assert_eq!(item.artifact_type.as_deref(), Some("coralogix_metrics"));
+        assert_eq!(item.chat_id.as_deref(), Some("chat-123"));
+        assert_eq!(item.chat_title.as_deref(), Some("Checkout latency"));
+        assert_eq!(item.chat_type.as_deref(), Some("api"));
+        assert_eq!(item.interaction_id.as_deref(), Some("interaction-123"));
+        assert_eq!(
+            item.created_at.as_deref(),
+            Some("2026-01-02T03:04:05.000000Z")
+        );
+    }
+
+    #[test]
+    fn deserialize_artifact_list_item_minimal() {
+        let item: ArtifactListItem = serde_json::from_value(json!({})).unwrap();
+        assert!(item.id.is_none());
+        assert!(item.artifact_type.is_none());
+        assert!(item.chat_title.is_none());
     }
 
     #[test]

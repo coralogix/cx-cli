@@ -287,7 +287,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | Command | Purpose |
 |---|---|
 | `cx schema` | Output the full command tree as JSON for agent consumption |
-| `cx olly` | Interact with the Olly AI assistant: `ask` |
+| `cx olly` | Interact with the Olly AI assistant: `ask`, `artifacts`, `rules` |
 
 **Local**
 

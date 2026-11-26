@@ -141,9 +141,25 @@ fn olly_disabled_blocks_olly_ask() {
 }
 
 #[test]
-fn olly_disabled_allows_olly_artifacts() {
+fn olly_disabled_blocks_olly_artifacts() {
+    for artifacts_args in [vec!["list"], vec!["get", "artifact-123"]] {
+        let tmp = temp_home();
+        let output = cx_with_config(&tmp, "olly_enabled = false\n")
+            .args(["olly", "artifacts"])
+            .args(&artifacts_args)
+            .args(["--api-key", "fake", "--region", "us1"])
+            .output()
+            .expect("failed to run cx");
+        assert!(!output.status.success(), "{artifacts_args:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("disabled"), "{artifacts_args:?}: {stderr}");
+    }
+}
+
+#[test]
+fn olly_enabled_allows_olly_artifacts() {
     let tmp = temp_home();
-    let output = cx_with_config(&tmp, "olly_enabled = false\n")
+    let output = cx_with_config(&tmp, "olly_enabled = true\n")
         .args([
             "olly",
             "artifacts",
@@ -158,7 +174,7 @@ fn olly_disabled_allows_olly_artifacts() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         !stderr.contains("disabled"),
-        "artifacts should not be blocked, stderr: {stderr}"
+        "should not be blocked when enabled, stderr: {stderr}"
     );
 }
 
@@ -251,4 +267,35 @@ fn no_config_file_allows_everything() {
         !stderr.contains("read-only mode"),
         "should not be read-only without config, stderr: {stderr}"
     );
+}
+
+#[test]
+fn olly_disabled_blocks_olly_rules() {
+    let tmp = temp_home();
+    for args in [
+        &["olly", "rules", "list"][..],
+        &[
+            "olly",
+            "rules",
+            "get",
+            "11111111-1111-4111-8111-111111111111",
+            "--team",
+        ],
+        &[
+            "olly",
+            "rules",
+            "delete",
+            "11111111-1111-4111-8111-111111111111",
+            "--yes",
+        ],
+    ] {
+        let output = cx_with_config(&tmp, "olly_enabled = false\n")
+            .args(args)
+            .args(["--api-key", "fake", "--region", "us1"])
+            .output()
+            .expect("failed to run cx");
+        assert!(!output.status.success(), "{args:?} should be blocked");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("disabled"), "{args:?} stderr: {stderr}");
+    }
 }

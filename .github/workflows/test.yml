@@ -63,7 +63,7 @@ jobs:
           curl --fail --silent --show-error \
             -H "Authorization: ${CARGO_REGISTRIES_CORALOGIX_INTERNAL_TOKEN}" \
             https://cgx.jfrog.io/artifactory/api/cargo/internal.rust.coralogix.net/index/cl/i-/cli-otel \
-            | jq -r 'select(.vers == "0.1.0") | "cli-otel 0.1.0 checksum: \(.cksum)"'
+            | jq -c 'select(.vers == "0.1.0") | {vers, cksum, features, features2, deps: [.deps[] | {name, req, optional, default_features, features, target, kind, registry}]}'
 
       - name: Install Linux system dependencies
         if: steps.filter.outputs.code == 'true' && runner.os == 'Linux'

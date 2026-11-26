@@ -3,12 +3,12 @@ use std::sync::OnceLock;
 use crate::harness;
 use serde_json::Value;
 
-// There is no `cx cases create`: cases are opened by the platform when alerts
-// fire, and the writable e2e team currently has none (`POST /cases/cases/v1`
-// returns an empty list). The read-only and write round-trips below therefore
-// need a known case id supplied out-of-band via `CX_TEST_CASE_ID` and skip
-// cleanly when it is absent. `cases_commands_reject_unknown_case` always runs
-// and proves every verb reaches the API and fails cleanly on a 404.
+// `cx cases create` is not run here: a created case is ACTIVE and can notify
+// whoever the team's routers match, and cases cannot be deleted, only closed.
+// The read-only and write round-trips below therefore need a known case id
+// supplied out-of-band via `CX_TEST_CASE_ID` and skip cleanly when it is
+// absent. `cases_commands_reject_unknown_case` always runs and proves every
+// verb reaches the API and fails cleanly on a 404.
 
 const UNKNOWN_CASE: &str = "00000000-0000-0000-0000-000000000000";
 
@@ -86,6 +86,17 @@ fn cases_commands_reject_unknown_case() {
         (&["cases", "get", UNKNOWN_CASE], &case_not_found),
         (&["cases", "events", "list", UNKNOWN_CASE], &case_not_found),
         (
+            &[
+                "cases",
+                "events",
+                "list",
+                UNKNOWN_CASE,
+                "--include-children-events",
+            ],
+            &case_not_found,
+        ),
+        (&["cases", "linked", UNKNOWN_CASE], &case_not_found),
+        (
             &["cases", "events", "get", UNKNOWN_CASE],
             "API request failed (404): Not Found: Event not found",
         ),
@@ -118,7 +129,19 @@ fn cases_commands_reject_unknown_case() {
             "--resolution-reason",
             "cx-e2e",
         ],
+        &["cases", "update", UNKNOWN_CASE, "--description", "cx-e2e"],
         &["cases", "comment", UNKNOWN_CASE, "--text", "cx-e2e"],
+        &["cases", "mute", UNKNOWN_CASE],
+        &["cases", "unmute", UNKNOWN_CASE],
+        &[
+            "cases",
+            "set-parent",
+            UNKNOWN_CASE,
+            "--parent",
+            UNKNOWN_CASE,
+            "--no-mute-child",
+        ],
+        &["cases", "unlink", UNKNOWN_CASE, "--linked", UNKNOWN_CASE],
         &["cases", "unassign", UNKNOWN_CASE],
         &["cases", "acknowledge", UNKNOWN_CASE],
         &["cases", "unacknowledge", UNKNOWN_CASE],
@@ -185,6 +208,7 @@ fn cases_write_roundtrip() {
         .pointer("/assignee/userId")
         .and_then(Value::as_str)
         .map(String::from);
+    let was_muted = before["muted"].as_bool().unwrap_or(false);
 
     // acknowledge <-> unacknowledge, ending in the original state
     let (first, second) = if was_acknowledged {
@@ -227,6 +251,21 @@ fn cases_write_roundtrip() {
         }
     }
 
+    // mute <-> unmute, ending in the original state
+    let (first, second) = if was_muted {
+        ("unmute", "mute")
+    } else {
+        ("mute", "unmute")
+    };
+    harness::run_write_ok(&["cases", first, &id, "-o", "json"]);
+    let mid = case_of(&harness::run_ok_json(&["cases", "get", &id, "-o", "json"]));
+    assert_eq!(
+        mid["muted"].as_bool(),
+        Some(!was_muted),
+        "{first} should flip muted: {mid}"
+    );
+    harness::run_write_ok(&["cases", second, &id, "-o", "json"]);
+
     // comment: visible in the event timeline
     let text = harness::unique_name("comment");
     harness::run_write_ok(&["cases", "comment", &id, "--text", &text, "-o", "json"]);
@@ -250,6 +289,44 @@ fn cases_write_roundtrip() {
         "-o",
         "json",
     ]);
+
+    // update --description, then restore (a blank description is rejected,
+    // so this only runs when the case already has one)
+    let original_description = before["description"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    if original_description.trim().is_empty() {
+        eprintln!(
+            "[e2e] not covered: cases update --description — the seeded case has no description \
+             to restore"
+        );
+    } else {
+        let new_description = harness::unique_name("description");
+        harness::run_write_ok(&[
+            "cases",
+            "update",
+            &id,
+            "--description",
+            &new_description,
+            "-o",
+            "json",
+        ]);
+        let mid = case_of(&harness::run_ok_json(&["cases", "get", &id, "-o", "json"]));
+        assert_eq!(
+            mid["description"], new_description,
+            "update should change the description"
+        );
+        harness::run_write_ok(&[
+            "cases",
+            "update",
+            &id,
+            "--description",
+            &original_description,
+            "-o",
+            "json",
+        ]);
+    }
 
     // assign -> unassign (restore the original assignee if there was one)
     if let Some(user) = discover_assignee() {
@@ -279,9 +356,18 @@ fn cases_write_roundtrip() {
         before.pointer("/priorityDetails/override"),
         "priority override restored"
     );
+    assert_eq!(
+        after["muted"].as_bool().unwrap_or(false),
+        was_muted,
+        "muted restored"
+    );
     eprintln!(
         "[e2e] not covered: cases resolve/close (success path) — irreversible on a real case; \
          cases update --resolution-reason — only meaningful on a resolved case"
+    );
+    eprintln!(
+        "[e2e] not covered: cases create — a new case is ACTIVE, may notify, and cannot be \
+         deleted; cases set-parent/unlink (success path) — needs a second seeded case"
     );
 }
 

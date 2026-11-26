@@ -24,7 +24,7 @@ lifecycle (active → acknowledged → resolved → closed).
 
 | Command | Purpose |
 |---|---|
-| `cx cases create --title <t> --priority <P1..P5> --description <text> [--label k=v ...] [--assignee <email>] [--status ACTIVE\|ACKNOWLEDGED]` | Create a case manually — see "Creating a case" |
+| `cx cases create --title <t> --priority <P1..P5> --description <text> [--case-label k=v ...] [--assignee <email>] [--status ACTIVE\|ACKNOWLEDGED]` | Create a case manually — see "Creating a case" |
 | `cx cases get <id>` | Get a single case by ID |
 | `cx cases update <id> [--title] [--resolution-reason] [--description]` | Update mutable fields; `--description` replaces the whole description — see "Updating the description" |
 | `cx cases comment <id> --text <text>` | Add a comment to the case timeline |
@@ -91,7 +91,7 @@ cx cases create \
   --title "Payments API p99 latency degraded" \
   --priority P2 \
   --description "p99 latency on payments-api rose from ~250ms to ~900ms starting 2026-10-27 10:00 UTC; error rate unchanged. Started with deploy v4.12. Evidence: <query/dashboard links>. Impact: checkout slow for EU users." \
-  --label service=payments-api --label routing.team=payments \
+  --case-label service=payments-api --case-label routing.team=payments \
   --assignee you@example.com
 ```
 
@@ -108,7 +108,7 @@ A manual case is **fully managed by the user**:
   evidence (exact queries, numbers, dashboard or console links you actually saw),
   and what has been ruled out. Keep it current with `cx cases update --description`
   (see "Updating the description"); short follow-ups go in `cx cases comment`.
-- **Labels** (`--label key=value`, repeatable) drive filtering, category
+- **Labels** (`--case-label key=value`, repeatable; the global `--label` selects profiles, not case labels) drive filtering, category
   derivation, and notification routing — `routing.*` labels pick the router.
   Unlike the description, they are fixed at creation.
 - **Initial status** is `ACTIVE` unless `--status ACKNOWLEDGED`. Only start it
@@ -118,9 +118,8 @@ A manual case is **fully managed by the user**:
   report it. If it is still missing, refer to the case by its title and UUID —
   the printed console link opens it now — and say the readable id will appear
   shortly. Never compose a `CASE-…` id yourself.
-- **The description is write-only.** The Cases UI shows it, but `cx cases get`
-  does not return it. Don't re-fetch to check it, and don't report a case as having
-  no description on that basis.
+- **The description comes back on reads.** `cx cases get` and `cx cases linked`
+  return it, so check it there rather than asking the user.
 
 Before creating, ask the user to confirm title, priority, and description — a case
 notifies people. Prefer one case per issue. Nothing deduplicates a manual case, so
@@ -229,10 +228,13 @@ The backend enforces the shape, each with a clear error:
 | `Case is already a child of another case` | One parent maximum | Report the existing parent; offer to unlink first |
 | `Target case is already a child…` | No grandparents | The target cannot be a parent; offer the top of the chain |
 | `Cannot detach from parent: case is not a child` | Nothing to unlink | Run `cx cases linked` and report the real hierarchy |
+| `Cases are not linked in a parent-child relationship` | Already unlinked | Nothing to do; report the current hierarchy |
+| `Cannot mute an already-muted case` / `Cannot unmute an already-unmuted case` | Already in that state | Nothing to do; don't retry |
 
 A parent takes at most 100 children. Linking a resolved or closed case is allowed.
-`cx cases unlink <id> --linked <other-id>` removes a link. If the child was linked
-with `--mute-child` and should notify again, run `cx cases unmute` on it.
+`cx cases unlink <id> --linked <other-id>` removes a link; the two cases can be
+given in either order. Unlinking also unmutes the child, so it notifies again; if it
+should stay quiet, run `cx cases mute` on it afterwards.
 
 To read a parent's timeline together with its children's, run
 `cx cases events list <parent-id> --include-children-events`. Every event carries

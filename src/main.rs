@@ -1558,7 +1558,7 @@ Examples:
   cx cases create --title \"Payments latency\" --priority P2 \\
     --description \"p99 latency on payments-api up 3x since 10:00 UTC.\"
   cx cases create --title \"Suspicious logins\" --priority P1 \\
-    --description \"...\" --label routing.team=security --assignee alice@example.com")]
+    --description \"...\" --case-label routing.team=security --assignee alice@example.com")]
     Create {
         /// Case title.
         #[arg(long)]
@@ -1569,8 +1569,9 @@ Examples:
         /// Priority (P1, P2, P3, P4, P5).
         #[arg(long)]
         priority: String,
-        /// Label as key=value (repeatable).
-        #[arg(long = "label")]
+        /// Case label as key=value (repeatable). Not `--label`, which selects
+        /// profiles for fan-out.
+        #[arg(long = "case-label", value_name = "KEY=VALUE")]
         labels: Vec<String>,
         /// Assignee - an email address (resolved via the team-members
         /// directory) or a raw user ID.
@@ -7336,5 +7337,43 @@ mod tests {
     #[test]
     fn parse_completions_shell_rejects_garbage() {
         assert!(parse_completions_shell("not-a-shell").is_err());
+    }
+}
+
+#[cfg(test)]
+mod cli_definition_tests {
+    use clap::{CommandFactory, Parser};
+
+    use super::{CasesCmd, Cli, Commands};
+
+    #[test]
+    fn cli_definition_is_valid() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn cases_create_case_label_does_not_select_profiles() {
+        let cli = Cli::try_parse_from([
+            "cx",
+            "cases",
+            "create",
+            "--title",
+            "t",
+            "--priority",
+            "P5",
+            "--description",
+            "d",
+            "--case-label",
+            "routing.team=payments",
+        ])
+        .expect("cases create parses");
+        assert!(cli.label.is_empty());
+        let Commands::Cases {
+            cmd: CasesCmd::Create { labels, .. },
+        } = cli.command
+        else {
+            panic!("expected cases create");
+        };
+        assert_eq!(labels, ["routing.team=payments"]);
     }
 }

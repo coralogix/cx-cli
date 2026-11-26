@@ -98,13 +98,15 @@ cx skills install --interactive
 Both failure modes name the fix, and neither leaves a half-installed state:
 
 - **No Node.js** — `Node.js/npx is required to install the cx agent skills.`
-  Install Node.js and rerun, or skip the skills step.
+  Install Node.js, then run `cx skills install --global` (or `--local`); the
+  message names the command with the scope you already chose.
 - **No scope and no terminal** (CI, containers) —
   `no skills install scope - pass --global or --local`. There is nobody to answer
   the prompt, so name the scope explicitly.
 
 A failed skills install never blocks onboarding: inside `cx init` it downgrades to
-a warning, and `cx` itself stays fully usable without skills.
+a warning. Coding agents use `cx` much better with the skills, so install Node.js
+and run `cx skills install --global` (or `--local`) afterwards.
 
 On Windows, `npx` resolves through its `.cmd` shim, so no extra setup is needed.
 

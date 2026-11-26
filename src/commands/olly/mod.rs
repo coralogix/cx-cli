@@ -22,15 +22,18 @@ use crate::spill::{self, maybe_spill, SpillOutcome};
 /// Send a message to the AI assistant.
 ///
 /// Creates a new chat if `chat_id` is None, otherwise continues an existing chat.
-/// Uses blocking mode to wait for the response.
+/// `timeout` is how long to wait for the answer; `None` returns at once with
+/// the IDs to pass to `cx olly interactions get`. `profile` is the profile the
+/// user selected, if any; the no-wait hint repeats it.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_ask(
     targets: &[Arc<ExecutionTarget>],
     message: &str,
     chat_id: Option<&str>,
     model: &str,
-    timeout: u32,
+    timeout: Option<u32>,
     agent_to_agent_mode: bool,
+    profile: Option<&str>,
     output: OutputFormat,
 ) -> Result<()> {
     // Olly is single-profile only - chats belong to a specific user/team
@@ -74,8 +77,65 @@ pub async fn run_ask(
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
         }
+        // Still running: with `--no-wait`, or when a blocking ask came back
+        // before Olly finished. Asking again would start a second
+        // investigation, so point at `interactions get` instead.
+        OutputFormat::Text if !interaction.is_terminal() => {
+            render_interaction_header(&chat_id, &interaction);
+            println!();
+            println!("{}", "Check on it with:".dimmed());
+            // The chat belongs to one team, so repeat the profile the user chose.
+            let profile = profile.map(|p| format!(" -p {p}")).unwrap_or_default();
+            println!(
+                "  cx olly interactions get {chat_id} {}{profile}",
+                interaction.id
+            );
+        }
         OutputFormat::Text => {
             render_ask_text(&chat_id, &interaction)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Show the status of an interaction and, once Olly has produced one, the answer.
+pub async fn run_interactions_get(
+    targets: &[Arc<ExecutionTarget>],
+    chat_id: &str,
+    interaction_id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    if targets.len() > 1 {
+        bail!("cx olly does not support multi-profile. Use a single profile with -p <profile>.");
+    }
+
+    let target = &targets[0];
+    let api = OllyApi::from_client(target.client.clone());
+
+    eprintln!("{}", "Fetching interaction...".dimmed());
+    let interaction = api.get_interaction(chat_id, interaction_id).await?;
+
+    target
+        .emit_console_link(|base| crate::console_url::olly_chat_url(base, chat_id))
+        .await;
+
+    match output {
+        OutputFormat::Json => {
+            render::render_json(&[interaction_to_json(&interaction, chat_id)])?;
+        }
+        OutputFormat::Toon => {
+            let toon = toon_encode(&[interaction_to_json(&interaction, chat_id)])
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            render_interaction_header(chat_id, &interaction);
+            println!();
+            match interaction.assistant_text() {
+                Some(text) => println!("{text}"),
+                None => println!("{}", no_answer_message(&interaction).yellow()),
+            }
         }
     }
 
@@ -406,18 +466,30 @@ fn render_ask_text(chat_id: &str, interaction: &api::Interaction) -> Result<()> 
         Some(text) => {
             println!("{text}");
         }
-        None => {
-            if interaction.is_error() {
-                println!("{}", "Generation encountered an error.".yellow());
-            } else if interaction.is_stopped() {
-                println!("{}", "Generation was stopped.".yellow());
-            } else {
-                println!("{}", "No response received.".yellow());
-            }
-        }
+        None => println!("{}", no_answer_message(interaction).yellow()),
     }
 
     Ok(())
+}
+
+fn render_interaction_header(chat_id: &str, interaction: &api::Interaction) {
+    println!("{} {}", "Chat ID:".dimmed(), chat_id.cyan());
+    println!("{} {}", "Interaction ID:".dimmed(), interaction.id.cyan());
+    println!("{} {}", "Status:".dimmed(), interaction.status);
+}
+
+fn no_answer_message(interaction: &api::Interaction) -> &'static str {
+    if interaction.is_error() {
+        "Generation encountered an error. There is no answer."
+    } else if interaction.is_stopped() {
+        "Generation was stopped."
+    } else if interaction.is_timed_out() {
+        "Olly timed out before it produced an answer."
+    } else if interaction.is_terminal() {
+        "No response received."
+    } else {
+        "No answer yet: Olly is still working. Run this command again to check."
+    }
 }
 
 fn artifact_list_item_to_json(artifact: &api::ArtifactListItem) -> Value {

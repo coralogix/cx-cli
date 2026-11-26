@@ -126,8 +126,12 @@ impl Interaction {
         self.status.eq_ignore_ascii_case("stopped")
     }
 
+    pub fn is_timed_out(&self) -> bool {
+        self.status.eq_ignore_ascii_case("timed_out")
+    }
+
     pub fn is_terminal(&self) -> bool {
-        self.is_completed() || self.is_error() || self.is_stopped()
+        self.is_completed() || self.is_error() || self.is_stopped() || self.is_timed_out()
     }
 
     pub fn assistant_text(&self) -> Option<String> {
@@ -240,23 +244,28 @@ impl OllyApi {
     /// relies on the parent agent's broader context. Defaults to `false` in
     /// the CLI since `cx olly ask` is used directly by humans as well as by
     /// agents; LLM/agent callers should pass `--agent-to-agent-mode` to opt in.
+    ///
+    /// `timeout_seconds`: `Some` waits for the answer up to that long; `None`
+    /// returns at once with an `in_progress` interaction.
     pub async fn send_message(
         &self,
         chat_id: &str,
         content: &str,
         model_choice: &str,
-        timeout_seconds: u32,
+        timeout_seconds: Option<u32>,
         agent_to_agent_mode: bool,
     ) -> Result<Interaction> {
         let path = format!("{CHATS_BASE}/{chat_id}/interactions/");
-        let body = json!({
+        let mut body = json!({
             "content": [InputContentBlock::text(content)],
             "interaction_mode": "skill",
             "model_choice": model_choice,
-            "should_block": true,
-            "timeout_seconds": timeout_seconds,
+            "should_block": timeout_seconds.is_some(),
             "agent_to_agent_mode": agent_to_agent_mode
         });
+        if let Some(timeout) = timeout_seconds {
+            body["timeout_seconds"] = json!(timeout);
+        }
         self.client
             .post_with_headers(&path, None, &body, &[INTERACTION_SOURCE_HEADER])
             .await
@@ -408,6 +417,29 @@ mod tests {
         let interaction: Interaction = serde_json::from_value(json).unwrap();
         assert!(interaction.is_stopped());
         assert!(interaction.is_terminal());
+    }
+
+    #[test]
+    fn deserialize_interaction_timed_out_keeps_partial_answer() {
+        let json = json!({
+            "id": "interaction-123",
+            "chat_id": "chat-456",
+            "status": "timed_out",
+            "responses": [
+                {
+                    "id": "msg-789",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "So far I found..."}]
+                }
+            ]
+        });
+        let interaction: Interaction = serde_json::from_value(json).unwrap();
+        assert!(interaction.is_timed_out());
+        assert!(interaction.is_terminal());
+        assert_eq!(
+            interaction.assistant_text().as_deref(),
+            Some("So far I found...")
+        );
     }
 
     #[test]

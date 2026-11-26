@@ -963,6 +963,8 @@ Examples:
   cx olly ask \"What alerts fired today?\"
   cx olly ask \"Show me error logs\" --chat-id <id>
   cx olly ask \"Analyze this metric\" --model claude-sonnet-4-5
+  cx olly ask \"Investigate the checkout latency\" --no-wait
+  cx olly interactions get <chat-id> <interaction-id>
   cx olly artifacts list --chat-id <chat-id>
   cx olly artifacts get <artifact-id>")]
     Olly {
@@ -1288,7 +1290,8 @@ Examples:
   cx olly ask \"What alerts fired today?\"
   cx olly ask \"Show me error logs\" --chat-id <uuid>
   cx olly ask \"Analyze this\" --model claude-sonnet-4-5
-  cx olly ask \"Find error logs that start with 'Cart Not Found' in the last 6 hours\" --agent-to-agent-mode")]
+  cx olly ask \"Find error logs that start with 'Cart Not Found' in the last 6 hours\" --agent-to-agent-mode
+  cx olly ask \"Investigate the checkout latency\" --no-wait")]
     Ask {
         /// The message to send to the assistant.
         message: String,
@@ -1305,6 +1308,11 @@ Examples:
         #[arg(long, default_value_t = 900)]
         timeout: u32,
 
+        /// Return the chat and interaction IDs at once instead of waiting for
+        /// the answer. Check on it with `cx olly interactions get`.
+        #[arg(long, conflicts_with = "timeout")]
+        no_wait: bool,
+
         /// Ask Olly as a sub-agent (agent-to-agent mode): shorter responses, no
         /// charts/tables, asks clarifying questions instead of guessing.
         /// Defaults to false (human-facing); pass this flag if you're an
@@ -1313,10 +1321,34 @@ Examples:
         agent_to_agent_mode: bool,
     },
 
+    /// Check on interactions (one question and its answer).
+    Interactions {
+        #[command(subcommand)]
+        cmd: OllyInteractionsCmd,
+    },
+
     /// Manage artifacts from assistant responses.
     Artifacts {
         #[command(subcommand)]
         cmd: OllyArtifactsCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum OllyInteractionsCmd {
+    /// Show an interaction's status and, once Olly has produced one, the answer.
+    #[command(after_help = "\
+Statuses: in_progress, completed, error, stopped, timed_out.
+
+Examples:
+  cx olly interactions get <chat-id> <interaction-id>
+  cx olly interactions get <chat-id> <interaction-id> -o json")]
+    Get {
+        /// Chat ID (printed by `cx olly ask`).
+        chat_id: String,
+
+        /// Interaction ID (printed by `cx olly ask --no-wait`).
+        interaction_id: String,
     },
 }
 
@@ -7257,6 +7289,7 @@ async fn main() -> Result<()> {
                     chat_id,
                     model,
                     timeout,
+                    no_wait,
                     agent_to_agent_mode,
                 } => {
                     commands::olly::run_ask(
@@ -7264,12 +7297,27 @@ async fn main() -> Result<()> {
                         &message,
                         chat_id.as_deref(),
                         &model,
-                        timeout,
+                        (!no_wait).then_some(timeout),
                         agent_to_agent_mode,
+                        selected_profiles.first().map(String::as_str),
                         output,
                     )
                     .await?;
                 }
+                OllyCmd::Interactions { cmd } => match cmd {
+                    OllyInteractionsCmd::Get {
+                        chat_id,
+                        interaction_id,
+                    } => {
+                        commands::olly::run_interactions_get(
+                            &targets,
+                            &chat_id,
+                            &interaction_id,
+                            output,
+                        )
+                        .await?;
+                    }
+                },
                 OllyCmd::Artifacts { cmd } => match cmd {
                     OllyArtifactsCmd::List {
                         chat_id,

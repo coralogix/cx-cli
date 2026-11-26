@@ -103,7 +103,7 @@ off this list only with a safe, repeatable way to run it.
 | `enrichments overwrite` | The endpoint also deletes every custom enrichment table the new set does not reference, so a parallel round-trip can destroy another run's table. Covered by wiremock only. |
 | `notifications presets set-default` | No command reads the current default, so it cannot be restored. |
 | `cases` writes on a real case (`cases_write_roundtrip`) | Manual only, with `CX_TEST_CASE_ID`; it mutates one shared case and is not parallel-safe. The 404 paths of every verb run in CI. |
-| `olly ask` | AI features are not enabled on the test team (403); the test skips. |
+| `olly ask`, `olly interactions get` | AI features are not enabled on the test team (403); the test skips. |
 
 ### CI
 

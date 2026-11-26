@@ -591,7 +591,6 @@ only controls where new profiles store credentials:
 | `CX_TELEMETRY` | Enables opt-in CLI execution telemetry when set to a truthy value (`1`/`true`/`on`/`yes`). See [CLI telemetry](cli-telemetry.md). |
 | `CX_OTLP_ENDPOINT` | cx-specific OTLP/HTTP traces URL. `https` for remote; `http` only for loopback. |
 | `CX_OTLP_API_KEY` | Bearer token for the cx-specific telemetry endpoint (attached only on `https`). |
-| `CX_TELEMETRY_FAILURE_LOGS` | When truthy, also export a correlated OTLP failure log on failed commands (`/v1/logs` sibling of the traces endpoint). |
 | `DO_NOT_TRACK` | When truthy, disables CLI telemetry regardless of other settings. |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.

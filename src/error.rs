@@ -22,9 +22,6 @@ pub enum CxError {
     #[error("HTTP error: {0}")]
     Http(reqwest::Error),
 
-    #[error("HTTP middleware error: {0}")]
-    HttpMiddleware(#[source] anyhow::Error),
-
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
@@ -43,15 +40,6 @@ impl From<reqwest::Error> for CxError {
             Self::Timeout
         } else {
             Self::Http(error)
-        }
-    }
-}
-
-impl From<reqwest_middleware::Error> for CxError {
-    fn from(error: reqwest_middleware::Error) -> Self {
-        match error {
-            reqwest_middleware::Error::Reqwest(error) => error.into(),
-            reqwest_middleware::Error::Middleware(error) => Self::HttpMiddleware(error),
         }
     }
 }

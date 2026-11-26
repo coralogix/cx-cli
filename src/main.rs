@@ -22,8 +22,6 @@ use coralogix_cli::telemetry;
 use coralogix_cli::update_check;
 use coralogix_cli::Tier;
 
-mod command_telemetry;
-
 /// Returns profile names from `~/.cx/profiles/` as completion candidates.
 fn complete_profile_names(current: &OsStr) -> Vec<CompletionCandidate> {
     let prefix = current.to_str().unwrap_or("");
@@ -4899,7 +4897,6 @@ async fn run_main() -> Result<()> {
     };
     telemetry::run(command, |matches| async move {
         if legacy_profiles {
-            telemetry::record_legacy_profiles();
             let profiles_cli = ProfilesCli::from_arg_matches(&matches)?;
             let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
             run_profiles(cmd).await
@@ -4989,7 +4986,6 @@ async fn run(matches: clap::ArgMatches) -> Result<()> {
         && safety::get_leaf_subcommand_name(&matches)
             .as_deref()
             .is_some_and(safety::is_write_verb);
-    command_telemetry::record_command(&cli.command, risky_write);
     let yes = cli.yes;
     // Load global config early for read-only / risky / olly gating.
     let global_cfg_early = config::load_config().unwrap_or_default();
@@ -5034,9 +5030,6 @@ async fn run(matches: clap::ArgMatches) -> Result<()> {
     }
 
     let local_output = local_output_format(&cli);
-    if let Some(output) = local_output {
-        telemetry::record_output_format(output);
-    }
 
     // Profiles command is usually handled by the early ProfilesCli parser above,
     // but when global flags precede `profiles` (e.g. `cx --read-only profiles list`),
@@ -5274,7 +5267,6 @@ async fn run(matches: clap::ArgMatches) -> Result<()> {
         .output
         .or_else(|| config::first_profile_output_format(&selected_profiles))
         .unwrap_or(global_config.default_output_format);
-    telemetry::record_output_format(output);
     let max_direct = global_config.max_dataprime_direct_output_size;
     let temp_dir = global_config.temp_dir.clone();
 
@@ -5312,7 +5304,6 @@ async fn run(matches: clap::ArgMatches) -> Result<()> {
             }
         };
 
-    telemetry::record_profile_count(configs.len());
     let targets = build_targets(
         configs,
         no_console_link,

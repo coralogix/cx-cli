@@ -1,8 +1,8 @@
 # cx CLI telemetry (v1)
 
-`cx` uses the Coralogix-owned `cli-otel` crate for one execution span per command,
-optional correlated failure logs, and HTTP client child spans. The generic crate owns
-OpenTelemetry environment configuration, HTTPS checks, host fields, CI and caller
+`cx` uses the Coralogix-owned `cli-otel` crate for one execution span per command. The
+generic crate owns OpenTelemetry environment configuration, HTTPS checks, host fields, CI
+and caller
 detection, and the one-second default export deadline. The cx adapter owns consent policy,
 Coralogix attributes, ingress headers, and its safe-field allowlist.
 
@@ -26,8 +26,6 @@ removed from loopback HTTP requests.
 For cx-only setup, `CX_OTLP_ENDPOINT` is the exact traces URL and `CX_OTLP_API_KEY` is
 sent as a Bearer token. The Coralogix application and subsystem headers are added by the
 cx adapter. The export deadline is capped at one second for command responsiveness.
-`CX_TELEMETRY_FAILURE_LOGS=1` also exports a correlated failure log to the `/v1/logs`
-sibling of the traces endpoint.
 
 `TRACEPARENT` and `TRACESTATE` are accepted as optional parent context inputs. Export
 failures never change the command result or exit status.
@@ -36,9 +34,8 @@ failures never change the command result or exit status.
 
 The shared library emits standard process, service, OS, and host fields, plus generic
 `cli.ci.provider` and `cli.agent.name` fields when it detects known environments. The cx
-adapter adds `cx.application.name`, `cx.subsystem.name`, `cx.cli.output.format`,
-`cx.cli.command.risky`, `cx.cli.query.language`, `cx.cli.profile.count`, and the Coralogix
-region and ingress headers. The shared library records a detected coding agent with both
+adapter adds `cx.application.name` and `cx.subsystem.name`, plus Coralogix ingress headers.
+The shared library records a detected coding agent with both
 `cli.agent.name` and the current `gen_ai.agent.id` semantic-convention key.
 
 No raw command argument values, profile names, query text, request/response bodies, or

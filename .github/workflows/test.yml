@@ -55,12 +55,6 @@ jobs:
           oidc-provider-name: github
           oidc-audience: jfrog-github
 
-      - name: Regenerate cli-otel lock entry for diagnostics
-        if: steps.filter.outputs.code == 'true' && matrix.os == 'ubuntu-latest'
-        env:
-          CARGO_REGISTRIES_CORALOGIX_INTERNAL_TOKEN: Bearer ${{ steps.jfrog.outputs.oidc-token }}
-        run: cargo update -p cli-otel && git diff -- Cargo.lock
-
       - name: Install Linux system dependencies
         if: steps.filter.outputs.code == 'true' && runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config

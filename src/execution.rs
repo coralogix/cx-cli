@@ -232,8 +232,20 @@ where
 {
     let futures = targets.iter().map(|t| {
         let profile_name = t.profile_name.clone();
+        let target = Arc::clone(t);
         let fut = f(Arc::clone(t));
-        async move { (profile_name, fut.await) }
+        async move {
+            let result = fut.await;
+            if let Err(error) = &result {
+                if crate::config::expire_rejected_access_token(&target.cfg, error) {
+                    eprintln!(
+                        "The access token for profile '{profile_name}' was rejected. The next \
+                         run will refresh it."
+                    );
+                }
+            }
+            (profile_name, result)
+        }
     });
     join_all(futures).await
 }

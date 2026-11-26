@@ -1275,6 +1275,15 @@ async fn resolve_single(
                     };
                     (bearer, None, None, !region_overridden)
                 }
+                Err(error) if oauth::is_refresh_rejected(&error) && !region_overridden => {
+                    // The IdP rejected the refresh token, so it will never
+                    // work again. Drop the stored session: later runs then
+                    // fail without calling the token endpoint. Under
+                    // `--region` the rejection came from another region's
+                    // IdP and says nothing about the stored session.
+                    forget_rejected_session(profile_name, &mut profile, stored_region);
+                    return Err(error);
+                }
                 Err(error) => return Err(error),
             };
             if let Some(new_tokens) = refreshed {
@@ -1333,6 +1342,60 @@ async fn resolve_single(
             .map(|s| s.trim_end_matches('/').to_string()),
         credentials_overridden: api_key_override.is_some(),
     })
+}
+
+/// Best-effort removal of an OAuth session whose refresh token the IdP
+/// rejected. A failure to write only means the next run asks the IdP again.
+fn forget_rejected_session(profile_name: &str, profile: &mut Profile, stored_region: Region) {
+    match profile.credential_storage {
+        CredentialStorage::OsStore => oauth::forget_tokens_keyring(profile_name),
+        CredentialStorage::File => {
+            profile.oauth_tokens = None;
+            let mut to_save = profile.clone();
+            to_save.region = stored_region;
+            let _ = save_profile(profile_name, &to_save);
+        }
+    }
+}
+
+/// Called when a command failed for an OAuth profile. If the API rejected an
+/// access token that the cached expiry still considers valid, mark it expired
+/// so the next run refreshes it. Returns true when it did.
+///
+/// A revoked access token otherwise keeps failing until its original expiry,
+/// although the refresh token is still good. Best-effort: nothing here may
+/// turn into a second error on top of the command's own.
+pub fn expire_rejected_access_token(cfg: &ResolvedConfig, error: &anyhow::Error) -> bool {
+    if cfg.auth_kind != AuthKind::OAuth || cfg.credentials_overridden {
+        return false;
+    }
+    if !oauth::rejection_warrants_refresh(&cfg.api_key, error) {
+        return false;
+    }
+    let Ok(mut profile) = load_profile(&cfg.profile_name) else {
+        return false;
+    };
+    match profile.credential_storage {
+        CredentialStorage::OsStore => {
+            // Only when the stored token is the one that was rejected: another
+            // `cx` process may have refreshed it in the meantime.
+            let stored = keyring_store::get_secret(&cfg.profile_name, "oauth_access_token");
+            if !matches!(stored, Ok(Some(ref token)) if *token == cfg.api_key) {
+                return false;
+            }
+            keyring_store::store_secret(&cfg.profile_name, "oauth_token_expiry", "0").is_ok()
+        }
+        CredentialStorage::File => {
+            let Some(tokens) = profile.oauth_tokens.as_mut() else {
+                return false;
+            };
+            if tokens.access_token != cfg.api_key {
+                return false;
+            }
+            tokens.expiry = Some(0);
+            save_profile(&cfg.profile_name, &profile).is_ok()
+        }
+    }
 }
 
 /// Put a refreshed token set on `profile` for the caller to save. When the

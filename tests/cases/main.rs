@@ -7,10 +7,30 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::cases::{
     run_acknowledge, run_assign, run_clear_priority, run_close, run_comment, run_event_get,
-    run_events_list, run_get, run_notifications, run_resolve, run_set_priority, run_unassign,
-    run_update,
+    run_events_list, run_get, run_links, run_notifications, run_resolve, run_set_priority,
+    run_unassign, run_update,
 };
 use coralogix_cli::config::OutputFormat;
+
+#[tokio::test]
+async fn links_reads_the_case_deep_links() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/cases/cases/v1/CASE-383/deep-links"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "deepLinks": { "detail": "https://team.app.eu2.coralogix.com/cases?id=c1" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_links(&targets, "CASE-383", OutputFormat::Json)
+        .await
+        .expect("run_links should succeed");
+}
 
 #[tokio::test]
 async fn get_case_by_id() {

@@ -862,6 +862,51 @@ pub async fn run_event_get(
     Ok(())
 }
 
+pub async fn run_links(
+    targets: &[Arc<ExecutionTarget>],
+    case_id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Fetching deep links for {case_id}...").dimmed()
+    );
+
+    let include_profile = targets.len() > 1;
+    let id = case_id.to_string();
+
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = CasesApi::new(&t.client);
+            Ok(api.deep_links(&id).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        all_results.push(val);
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Toon => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            render::render_get_text(&all_results, include_profile, "No deep links found.", None)?;
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn run_notifications(
     targets: &[Arc<ExecutionTarget>],
     case_ids: &[String],

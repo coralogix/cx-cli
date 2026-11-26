@@ -1642,6 +1642,13 @@ enum CasesCmd {
         /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
     },
+    /// Show a case's console deep links: the case page, and per alert indicator
+    /// the alert definition and a drilldown into its logs, metric, RUM, SLO or
+    /// tracing view.
+    Links {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+    },
     /// Update mutable fields on a case.
     Update {
         /// Case ID (UUID or readable ID, e.g. CASE-123).
@@ -5608,6 +5615,9 @@ async fn main() -> Result<()> {
             Commands::Cases { cmd } => match cmd {
                 CasesCmd::Get { id } => {
                     commands::cases::run_get(&targets, &id, output).await?;
+                }
+                CasesCmd::Links { id } => {
+                    commands::cases::run_links(&targets, &id, output).await?;
                 }
                 CasesCmd::Update {
                     id,

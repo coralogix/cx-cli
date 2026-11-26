@@ -5,7 +5,7 @@ description: >
   assign, resolve, or re-prioritize a case, or inspect its event timeline or
   notification deliveries.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # Cases Management Skill
@@ -19,6 +19,7 @@ through their lifecycle (active → acknowledged → resolved → closed).
 | Command | Purpose |
 |---|---|
 | `cx cases get <id>` | Get a single case by ID |
+| `cx cases links <id>` | Console deep links: the case page, and per alert indicator its alert definition and a logs / metric / RUM / SLO / tracing drilldown |
 | `cx cases update <id> [--title] [--resolution-reason]` | Update mutable fields |
 | `cx cases comment <id> --text <text>` | Add a comment to the case timeline |
 | `cx cases assign <id> --user <email>` | Assign a case (email, or raw user ID) |
@@ -103,10 +104,9 @@ There are no bulk endpoints. To act on many cases, pipe IDs through a loop, e.g.
 - **Always supply a resolution reason** unless `--no-reason` truly applies.
 - **`P1`-style shorthand** is accepted anywhere a priority/status/category is expected.
 - **Multi-profile fan-out** with `-p <profile>` (repeatable) for cross-environment triage.
-- **Link to a specific case** — build `<base>/cases?id=<case_id>`, where
-  `<base>` is the console URL already seen in a `View in Coralogix:
-  <base>/...` line printed by any `cx cases` command this session — never
-  fabricate `<base>` yourself.
+- **Link to a specific case** — use `deepLinks.detail` from `cx cases links <id>`,
+  or the `View in Coralogix:` line a `cx cases` command printed. Never build a
+  console URL yourself.
 
 ## References
 

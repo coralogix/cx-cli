@@ -198,6 +198,11 @@ impl<'a> CasesApi<'a> {
         self.client.get(&path, &[]).await
     }
 
+    pub async fn deep_links(&self, id: &str) -> Result<Value> {
+        let path = format!("{CASES_BASE}/{id}/deep-links");
+        self.client.get(&path, &[]).await
+    }
+
     /// Update a case (partial patch). The endpoint takes the updatable fields
     /// directly as the request body — it has no `patch` wrapper field.
     pub async fn update(&self, id: &str, patch: &Value) -> Result<Value> {

@@ -37,6 +37,8 @@ This is the core judgment when a user asks "is this a real incident", "is this j
 
 > The alert-side analysis lives in the `alerts` skill. The steps here are the case→alert handoff, not a replacement.
 
+Start with `cx cases links <id>`. `deepLinks.alertIndicators` is keyed by indicator id and gives, per indicator, the alert definition URL (`alertDef`) and a ready drilldown into the triggering logs, metric, RUM, SLO or tracing view. Hand these to the user as-is rather than describing where to click.
+
 For each `AlertIndicator`:
 
 1. **Fetch the alert definition.** Always use `latest_alert_version_id` with `get_alerts_object` — this provides the exact alert definition that created the case. `alert_id` will return the current definition which may have changed since the case was created.

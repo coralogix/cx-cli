@@ -118,14 +118,47 @@ fn unix_now_secs() -> u64 {
 /// Seconds until the JWT access token expires (`> 0` = still valid, `< 0` = expired).
 /// Returns `None` when the JWT structure or `exp` claim is not parseable.
 pub fn token_seconds_remaining(access_token: &str) -> Option<i64> {
+    let exp = jwt_timestamp_claim(access_token, "exp")?;
+    Some(exp as i64 - unix_now_secs() as i64)
+}
+
+/// Seconds since the JWT access token was issued. Returns `None` when the JWT
+/// structure or `iat` claim is not parseable.
+pub fn token_age_secs(access_token: &str) -> Option<i64> {
+    let iat = jwt_timestamp_claim(access_token, "iat")?;
+    Some(unix_now_secs() as i64 - iat as i64)
+}
+
+fn jwt_timestamp_claim(access_token: &str, claim: &str) -> Option<u64> {
     let parts: Vec<&str> = access_token.split('.').collect();
     if parts.len() != 3 {
         return None;
     }
     let payload = URL_SAFE_NO_PAD.decode(parts[1]).ok()?;
     let json: serde_json::Value = serde_json::from_slice(&payload).ok()?;
-    let exp = json.get("exp")?.as_u64()?;
-    Some(exp as i64 - unix_now_secs() as i64)
+    json.get(claim)?.as_u64()
+}
+
+/// An access token younger than this that the API rejects is not refreshed
+/// early: it was just issued, so the rejection is a real permission error.
+/// This also bounds a caller that repeats a denied command to one extra
+/// refresh per window.
+const REJECTED_TOKEN_MIN_AGE_SECS: i64 = 300;
+
+/// True when the API rejected `access_token` (401 or 403) although the cached
+/// expiry says it is still valid, so the token may have been revoked and the
+/// next run should refresh it instead of reusing it.
+///
+/// The API answers 403 for a revoked token, the same as for a missing
+/// permission, so the two cannot be told apart from the response alone.
+pub fn rejection_warrants_refresh(access_token: &str, error: &anyhow::Error) -> bool {
+    let rejected = error.chain().any(|cause| {
+        matches!(
+            cause.downcast_ref::<crate::error::CxError>(),
+            Some(crate::error::CxError::Auth(_) | crate::error::CxError::Permission(_))
+        )
+    });
+    rejected && token_age_secs(access_token).is_some_and(|age| age >= REJECTED_TOKEN_MIN_AGE_SECS)
 }
 
 // ── OAuth protocol helpers ────────────────────────────────────────────────────
@@ -700,6 +733,22 @@ pub fn store_stored_tokens_keyring(profile: &str, tokens: &StoredOAuthTokens) ->
     Ok(())
 }
 
+/// Remove an OAuth session the IdP rejected from the OS credential store.
+///
+/// Without this, every later run reads the same dead refresh token and sends
+/// it to the token endpoint again. With it, later runs stop at "session
+/// expired" without a network call.
+pub fn forget_tokens_keyring(profile: &str) {
+    for key_name in [
+        "oauth_access_token",
+        "oauth_refresh_token",
+        "oauth_id_token",
+        "oauth_token_expiry",
+    ] {
+        keyring_store::delete_secret(profile, key_name);
+    }
+}
+
 /// Result of resolving an OAuth bearer token.
 ///
 /// When `os_store_fallback_reason` is set, the caller must persist
@@ -792,7 +841,7 @@ impl std::fmt::Display for RefreshRejected {
 
 impl std::error::Error for RefreshRejected {}
 
-fn is_refresh_rejected(err: &anyhow::Error) -> bool {
+pub fn is_refresh_rejected(err: &anyhow::Error) -> bool {
     err.chain()
         .any(|cause| cause.downcast_ref::<RefreshRejected>().is_some())
 }
@@ -1040,6 +1089,71 @@ mod tests {
     fn cached_token_is_valid_falls_back_to_jwt_exp_without_expiry() {
         // Token is not a JWT and there's no separate expiry -> conservatively invalid.
         assert!(!cached_token_is_valid("not-a-jwt", None));
+    }
+
+    fn jwt_issued_secs_ago(age: u64) -> String {
+        let payload = serde_json::json!({ "iat": unix_now_secs() - age }).to_string();
+        format!("header.{}.signature", URL_SAFE_NO_PAD.encode(payload))
+    }
+
+    fn api_error(error: crate::error::CxError) -> anyhow::Error {
+        anyhow::Error::from(error).context("profile 'p' failed")
+    }
+
+    #[test]
+    fn rejected_older_token_warrants_refresh() {
+        let token = jwt_issued_secs_ago(600);
+        // The API answers 403 for a revoked token, 401 for a malformed one.
+        let forbidden = api_error(crate::error::CxError::Permission("denied".into()));
+        let unauthorized = api_error(crate::error::CxError::Auth("expired".into()));
+        assert!(rejection_warrants_refresh(&token, &forbidden));
+        assert!(rejection_warrants_refresh(&token, &unauthorized));
+    }
+
+    #[test]
+    fn rejected_fresh_token_is_a_real_permission_error() {
+        let token = jwt_issued_secs_ago(10);
+        let forbidden = api_error(crate::error::CxError::Permission("denied".into()));
+        assert!(!rejection_warrants_refresh(&token, &forbidden));
+    }
+
+    #[test]
+    fn other_failures_do_not_warrant_refresh() {
+        let token = jwt_issued_secs_ago(600);
+        let server_error = api_error(crate::error::CxError::Api {
+            status: 500,
+            message: "boom".into(),
+        });
+        assert!(!rejection_warrants_refresh(&token, &server_error));
+        assert!(!rejection_warrants_refresh(
+            &token,
+            &anyhow::anyhow!("no route")
+        ));
+        // Without a readable `iat` the token's age is unknown: leave it alone.
+        let forbidden = api_error(crate::error::CxError::Permission("denied".into()));
+        assert!(!rejection_warrants_refresh("not-a-jwt", &forbidden));
+    }
+
+    #[test]
+    #[ignore = "requires system keyring access"]
+    fn forgetting_a_session_clears_every_oauth_entry() {
+        let profile = "cx_keyring_test_forget_session";
+        for key_name in [
+            "oauth_access_token",
+            "oauth_refresh_token",
+            "oauth_id_token",
+            "oauth_token_expiry",
+        ] {
+            keyring_store::store_secret(profile, key_name, "value").unwrap();
+        }
+
+        forget_tokens_keyring(profile);
+
+        let secret = |key_name| keyring_store::get_secret(profile, key_name).unwrap();
+        assert_eq!(secret("oauth_access_token"), None);
+        assert_eq!(secret("oauth_refresh_token"), None);
+        assert_eq!(secret("oauth_id_token"), None);
+        assert_eq!(secret("oauth_token_expiry"), None);
     }
 
     #[tokio::test]

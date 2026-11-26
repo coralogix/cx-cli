@@ -21,7 +21,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
     let commands = schema["commands"]
         .as_array()
         .expect("commands should be an array");
-    assert_eq!(commands.len(), 36, "expected 36 top-level commands");
+    assert_eq!(commands.len(), 37, "expected 37 top-level commands");
 
     let names: Vec<&str> = commands
         .iter()
@@ -30,6 +30,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
 
     // Verify key merged/renamed commands exist
     assert!(names.contains(&"alerts"), "missing alerts");
+    assert!(names.contains(&"datasets"), "missing datasets");
     assert!(names.contains(&"cases"), "missing cases");
     assert!(names.contains(&"iam"), "missing iam");
     assert!(names.contains(&"notifications"), "missing notifications");
@@ -51,6 +52,10 @@ fn schema_outputs_valid_json_with_expected_commands() {
     );
     assert!(names.contains(&"profiling"), "missing profiling");
     assert!(names.contains(&"rum"), "missing rum");
+    assert!(
+        names.contains(&"product-analytics"),
+        "missing product-analytics"
+    );
     assert!(names.contains(&"datasets"), "missing datasets");
     assert!(names.contains(&"skills"), "missing skills");
     assert!(names.contains(&"init"), "missing init");
@@ -96,6 +101,30 @@ fn schema_outputs_valid_json_with_expected_commands() {
     assert!(iam_subs.contains(&"users"));
     assert!(iam_subs.contains(&"groups"));
     assert!(iam_subs.contains(&"ip-access"));
+
+    let product_analytics = commands
+        .iter()
+        .find(|c| c["name"] == "product-analytics")
+        .unwrap();
+    let product_analytics_subs: Vec<&str> = product_analytics["subcommands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        product_analytics_subs,
+        [
+            "applications",
+            "views",
+            "actions",
+            "filter-values",
+            "funnels",
+            "pathways",
+            "heatmaps",
+            "settings"
+        ]
+    );
 
     // Verify docs subcommands
     let docs = commands.iter().find(|c| c["name"] == "docs").unwrap();

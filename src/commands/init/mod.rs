@@ -17,11 +17,11 @@
 //!
 //! * **Quick (interactive)** — bare `cx init` on a terminal. Guided prompts:
 //!   OAuth browser login (no auth-method question), a region prompt, and where
-//!   to store the secret (`os-store` preselected on macOS, direct Keychain
-//!   access when this binary is Developer ID-signed and `/usr/bin/security`
-//!   otherwise; `file` preselected on Windows and Linux). A prompt-free run
-//!   uses that same default, and a failed Keychain write is saved in the
-//!   profile file.
+//!   to store the secret (`os-store` preselected on macOS and Windows; macOS
+//!   uses direct Keychain access when this binary is Developer ID-signed and
+//!   `/usr/bin/security` otherwise; `file` is preselected on Linux). A
+//!   prompt-free run uses that same default, and a failed OS-store write is
+//!   saved in the profile file.
 //!   Output format and labels are defaulted (JSON / none) rather than asked;
 //!   Olly is enabled on the first profile without asking.
 //! * **Advanced (non-interactive)** — the setup is fully specified by flags (or

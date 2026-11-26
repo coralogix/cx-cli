@@ -7,3 +7,9 @@ rustflags = ["-C", "link-arg=/STACK:8388608"]
 
 [target.aarch64-pc-windows-msvc]
 rustflags = ["-C", "link-arg=/STACK:8388608"]
+
+[registry]
+global-credential-providers = ["cargo:token"]
+
+[registries.coralogix-internal]
+index = "sparse+https://cgx.jfrog.io/artifactory/api/cargo/internal.rust.coralogix.net/index/"

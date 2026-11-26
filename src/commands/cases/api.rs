@@ -292,6 +292,11 @@ impl<'a> CasesApi<'a> {
         self.client.get(&path, &[]).await
     }
 
+    pub async fn deep_links(&self, id: &str) -> Result<Value> {
+        let path = format!("{CASES_BASE}/{id}/deep-links");
+        self.client.get(&path, &[]).await
+    }
+
     /// Make `child_id` a child of `parent_uuid`. The link endpoint takes the
     /// parent only as a UUID.
     pub async fn set_parent(

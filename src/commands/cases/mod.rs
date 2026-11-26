@@ -1094,7 +1094,6 @@ pub async fn run_linked(
         "{}",
         format!("Fetching cases linked to {case_id}...").dimmed()
     );
-    let include_profile = targets.len() > 1;
     let id = case_id.to_string();
     let per_profile = fan_out(targets, |t| {
         let id = id.clone();
@@ -1104,7 +1103,37 @@ pub async fn run_linked(
         }
     })
     .await;
+    print_per_profile(targets, per_profile, output, "No linked cases found.")
+}
 
+pub async fn run_links(
+    targets: &[Arc<ExecutionTarget>],
+    case_id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Fetching deep links for {case_id}...").dimmed()
+    );
+    let id = case_id.to_string();
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = CasesApi::new(&t.client);
+            Ok(api.deep_links(&id).await?)
+        }
+    })
+    .await;
+    print_per_profile(targets, per_profile, output, "No deep links found.")
+}
+
+fn print_per_profile(
+    targets: &[Arc<ExecutionTarget>],
+    per_profile: Vec<(String, Result<Value>)>,
+    output: OutputFormat,
+    empty_message: &str,
+) -> Result<()> {
+    let include_profile = targets.len() > 1;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
@@ -1121,12 +1150,7 @@ pub async fn run_linked(
             println!("{toon}");
         }
         OutputFormat::Text => {
-            render::render_get_text(
-                &all_results,
-                include_profile,
-                "No linked cases found.",
-                None,
-            )?;
+            render::render_get_text(&all_results, include_profile, empty_message, None)?;
         }
     }
 

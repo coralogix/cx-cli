@@ -9,7 +9,7 @@ description: >
   cases", "find where a case came from", or wants to inspect or drive Coralogix Cases through their lifecycle using
   the cx CLI.
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # Cases Management Skill
@@ -40,6 +40,7 @@ lifecycle (active → acknowledged → resolved → closed).
 | `cx cases set-parent <child-id> --parent <parent-id> --mute-child\|--no-mute-child` | Make the first case a child of `--parent` — see "Case relationships" |
 | `cx cases unlink <id> --linked <other-id>` | Remove a parent-child link |
 | `cx cases linked <id>` | Read a case's parent or children |
+| `cx cases links <id>` | Console deep links: the case page, and per alert indicator its alert definition and a logs / metric / RUM / SLO / tracing drilldown |
 | `cx cases events list <case-id>` | Event timeline (status changes, comments, assignments) |
 | `cx cases events list <case-id> --include-children-events` | Parent timeline merged with its children's events |
 | `cx cases events get <event-id>` | A single event — drill in, e.g. to expand a comment thread |
@@ -304,10 +305,9 @@ There are no bulk endpoints. To act on many cases, pipe IDs through a loop, e.g.
 - **Manual cases are user-owned** — nothing closes them automatically, and their
   description is the only context; write it to stand on its own.
 - **Multi-profile fan-out** with `-p <profile>` (repeatable) for cross-environment triage.
-- **Link to a specific case** — build `<base>/cases?id=<case_id>`, where
-  `<base>` is the console URL already seen in a `View in Coralogix:
-  <base>/...` line printed by any `cx cases` command this session — never
-  fabricate `<base>` yourself.
+- **Link to a specific case** — use `deepLinks.detail` from `cx cases links <id>`,
+  or the `View in Coralogix:` line a `cx cases` command printed. Never build a
+  console URL yourself.
 
 ## References
 

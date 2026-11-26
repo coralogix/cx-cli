@@ -1085,6 +1085,14 @@ pub async fn run_unlink(
 }
 
 /// Read a case's parent or children.
+fn has_linked_cases(v: &Value) -> bool {
+    let links = &v["linkedCases"];
+    !links["parent"]["case"].is_null()
+        || links["children"]["cases"]
+            .as_array()
+            .is_some_and(|c| !c.is_empty())
+}
+
 pub async fn run_linked(
     targets: &[Arc<ExecutionTarget>],
     case_id: &str,
@@ -1121,12 +1129,8 @@ pub async fn run_linked(
             println!("{toon}");
         }
         OutputFormat::Text => {
-            render::render_get_text(
-                &all_results,
-                include_profile,
-                "No linked cases found.",
-                None,
-            )?;
+            let linked: Vec<Value> = all_results.into_iter().filter(has_linked_cases).collect();
+            render::render_get_text(&linked, include_profile, "No linked cases found.", None)?;
         }
     }
 
@@ -1442,6 +1446,21 @@ async fn finish_lifecycle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn has_linked_cases_detects_parent_or_children() {
+        assert!(!has_linked_cases(&json!({ "pbacTruncated": false })));
+        assert!(!has_linked_cases(
+            &json!({ "linkedCases": { "children": { "cases": [] } } })
+        ));
+        assert!(has_linked_cases(
+            &json!({ "linkedCases": { "parent": { "case": { "id": "p1" } } } })
+        ));
+        assert!(has_linked_cases(
+            &json!({ "linkedCases": { "children": { "cases": [{ "id": "c1" }] } } })
+        ));
+    }
 
     #[test]
     fn normalize_priority_accepts_shorthand() {

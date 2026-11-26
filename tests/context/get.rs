@@ -44,7 +44,6 @@ fn instruction(id: &str, level: &str, title: &str, subjects: Value, body: &str) 
         author(Some("Dana")),
     );
     entry["body"] = json!(body);
-    entry["source"] = Value::Null;
     entry["team_wide"] = json!(level == "team");
     entry["change_note"] = Value::Null;
     let matched = if level == "team" { json!([]) } else { subjects };

@@ -158,9 +158,6 @@ pub fn render_entry(e: &Entry) -> String {
         format!("Summary:  {}", i.summary),
         format!("Subjects: {}", subjects_display(i)),
     ];
-    if let Some(source) = &e.source {
-        lines.push(format!("Source:   {source}"));
-    }
     lines.push(format!("Created:  {}", day(&i.created_at)));
     lines.push(format!(
         "Updated:  {} by {}",
@@ -283,20 +280,18 @@ mod tests {
         assert!(!text.contains("matching lines"), "{text}");
     }
 
-    fn entry(source: Value, subjects: Value, deleted: bool, body: &str) -> Entry {
+    fn entry(subjects: Value, deleted: bool, body: &str) -> Entry {
         let mut v = item(subjects.clone(), deleted, None);
         v["updated_by"] = json!({ "user_id": "u-1", "name": "Dana", "credential": "user_token" });
         v["body"] = json!(body);
-        v["source"] = source;
         v["team_wide"] = json!(subjects.as_array().unwrap().is_empty());
         v["change_note"] = Value::Null;
         serde_json::from_value(v).unwrap()
     }
 
     #[test]
-    fn entry_header_with_source_and_subjects() {
+    fn entry_header_with_subjects() {
         let e = entry(
-            json!("incident review"),
             json!([{ "type": "service", "value": "checkout" }, { "type": "alert" }]),
             false,
             "line one\nline two",
@@ -304,14 +299,14 @@ mod tests {
         assert_eq!(
             render_entry(&e),
             format!(
-                "memory {ID}  rev 2\nTitle:    Checkout timeouts\nSummary:  Retry storms.\nSubjects: service:checkout alert\nSource:   incident review\nCreated:  2026-11-01\nUpdated:  2026-11-08 by Dana\n\nline one\nline two\n"
+                "memory {ID}  rev 2\nTitle:    Checkout timeouts\nSummary:  Retry storms.\nSubjects: service:checkout alert\nCreated:  2026-11-01\nUpdated:  2026-11-08 by Dana\n\nline one\nline two\n"
             )
         );
     }
 
     #[test]
-    fn entry_team_wide_deleted_without_source_keeps_body() {
-        let e = entry(Value::Null, json!([]), true, "body\n\n");
+    fn entry_team_wide_deleted_keeps_body() {
+        let e = entry(json!([]), true, "body\n\n");
         assert_eq!(
             render_entry(&e),
             format!(

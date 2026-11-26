@@ -295,11 +295,10 @@ async fn empty_search_in_json() {
     );
 }
 
-fn entry(kind: &str, subjects: Value, source: Value, deleted: bool) -> Value {
+fn entry(kind: &str, subjects: Value, deleted: bool) -> Value {
     let mut e = index(ID, kind, subjects.clone(), deleted);
     e["updated_by"] = json!({ "user_id": "u-1", "name": "Dana", "credential": "user_token" });
     e["body"] = json!("Check the pool size.\nThen the retries.");
-    e["source"] = source;
     e["team_wide"] = json!(subjects.as_array().unwrap().is_empty());
     e["change_note"] = Value::Null;
     e
@@ -321,12 +320,11 @@ async fn serve_get(noun: &str, revision: Option<&str>, response: Value) -> MockS
 }
 
 #[tokio::test]
-async fn get_current_with_subjects_and_source() {
+async fn get_current_with_subjects() {
     for (noun, kind) in KINDS {
         let body = entry(
             kind,
             json!([{ "type": "service", "value": "checkout" }, { "type": "host", "value": "web 01" }]),
-            json!("incident review 2026-11-08"),
             false,
         );
         let server = serve_get(noun, None, body).await;
@@ -342,7 +340,6 @@ async fn get_current_with_subjects_and_source() {
                  Title:    Checkout timeouts\n\
                  Summary:  Retry storms follow deploys.\n\
                  Subjects: service:checkout 'host:web 01'\n\
-                 Source:   incident review 2026-11-08\n\
                  Created:  2026-11-01\n\
                  Updated:  2026-11-08 by Dana\n\
                  \n\
@@ -353,9 +350,9 @@ async fn get_current_with_subjects_and_source() {
 }
 
 #[tokio::test]
-async fn get_revision_team_wide_null_source_deleted() {
+async fn get_revision_team_wide_deleted() {
     for (noun, kind) in KINDS {
-        let body = entry(kind, json!([]), Value::Null, true);
+        let body = entry(kind, json!([]), true);
         let home = Home::new();
 
         let server = serve_get(noun, Some("2"), body.clone()).await;

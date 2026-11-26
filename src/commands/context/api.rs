@@ -70,7 +70,6 @@ pub struct Entry {
     #[serde(flatten)]
     pub index: IndexLine,
     pub body: String,
-    pub source: Option<String>,
     pub team_wide: bool,
     pub change_note: Option<String>,
 }
@@ -208,8 +207,6 @@ pub struct EntryContent {
     pub subjects: Vec<Subject>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub team_wide: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -231,7 +228,6 @@ pub struct UpdateRequest {
 #[derive(Debug, Clone, Default)]
 pub struct HistoryQuery {
     pub author: Option<String>,
-    pub source: Option<String>,
     pub kind: Option<Kind>,
     /// RFC 3339.
     pub since: Option<String>,
@@ -278,7 +274,7 @@ pub fn revision_conflict_message(kind: Kind, id: &str, current: u64, expected: u
 
 pub fn deleted_message(kind: Kind, id: &str) -> String {
     format!(
-        "The {k} is deleted. See cx context {n} history {id}, then restore it with revert.",
+        "The {k} is deleted. See cx context {n} revisions {id}, then restore it with revert.",
         k = kind.singular(),
         n = kind.noun(),
     )
@@ -392,9 +388,6 @@ pub async fn team_history(
     let mut query: Vec<(&str, &str)> = vec![("limit", &limit), ("offset", &offset)];
     if let Some(author) = &q.author {
         query.push(("author", author));
-    }
-    if let Some(source) = &q.source {
-        query.push(("source", source));
     }
     if let Some(kind) = q.kind {
         query.push(("kind", kind.singular()));
@@ -549,11 +542,10 @@ mod tests {
         })
     }
 
-    fn entry_json(id: &str, kind: &str, subjects: Value, source: Option<&str>) -> Value {
+    fn entry_json(id: &str, kind: &str, subjects: Value) -> Value {
         let mut v = index_json(id, kind, subjects.clone());
         let team_wide = subjects.as_array().is_some_and(|s| s.is_empty());
         v["body"] = json!("line one\nline two");
-        v["source"] = json!(source);
         v["team_wide"] = json!(team_wide);
         v["change_note"] = Value::Null;
         v
@@ -567,14 +559,12 @@ mod tests {
             ID,
             "memory",
             json!([{ "type": "service", "value": "checkout" }, { "type": "alert", "value": null }]),
-            None,
         );
         let e: Entry = serde_json::from_value(raw).unwrap();
         assert_eq!(e.index.id, ID);
         assert_eq!(e.index.revision, 3);
         assert_eq!(e.index.updated_by.name.as_deref(), Some("Dana"));
         assert_eq!(e.index.subjects[1].value, None);
-        assert_eq!(e.source, None);
         assert_eq!(e.change_note, None);
         assert!(!e.team_wide);
         assert_eq!(e.body, "line one\nline two");
@@ -583,12 +573,11 @@ mod tests {
     #[test]
     fn deserializes_receipt() {
         let raw = json!({
-            "entry": entry_json(ID, "instruction", json!([]), Some("incident review")),
+            "entry": entry_json(ID, "instruction", json!([])),
             "found_by": { "context_for": [], "team_wide": true, "returned_in_full": true },
         });
         let r: Receipt = serde_json::from_value(raw).unwrap();
         assert!(r.entry.team_wide);
-        assert_eq!(r.entry.source.as_deref(), Some("incident review"));
         assert!(r.found_by.team_wide && r.found_by.returned_in_full);
         assert!(r.found_by.context_for.is_empty());
     }
@@ -597,9 +586,9 @@ mod tests {
     fn deserializes_context_response() {
         let raw = json!({
             "instructions": [
-                { "level": "team", "matched": [], "entry": entry_json(ID, "instruction", json!([]), None) },
+                { "level": "team", "matched": [], "entry": entry_json(ID, "instruction", json!([])) },
                 { "level": "subject", "matched": [{ "type": "alert", "value": "8f3a" }],
-                  "entry": entry_json(ID, "instruction", json!([{ "type": "alert", "value": "8f3a" }]), None) },
+                  "entry": entry_json(ID, "instruction", json!([{ "type": "alert", "value": "8f3a" }])) },
             ],
             "memories": {
                 "items": [{
@@ -691,7 +680,6 @@ mod tests {
                 value: None,
             }],
             team_wide: false,
-            source: None,
         };
         let create = serde_json::to_value(CreateRequest {
             id: ID.into(),
@@ -706,7 +694,6 @@ mod tests {
             content: EntryContent {
                 subjects: vec![],
                 team_wide: true,
-                source: Some("x".into()),
                 ..content
             },
             expected_revision: 2,
@@ -715,7 +702,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             update,
-            json!({ "title": "t", "summary": "s", "body": "b", "team_wide": true, "source": "x", "expected_revision": 2 })
+            json!({ "title": "t", "summary": "s", "body": "b", "team_wide": true, "expected_revision": 2 })
         );
         let query = serde_json::to_value(QueryRequest {
             limit: 50,
@@ -760,7 +747,7 @@ mod tests {
             );
             assert_eq!(
                 msg(409, r#"{"code":"deleted","message":"x"}"#, with_id(kind, Some(3))),
-                format!("The {k} is deleted. See cx context {n} history {ID}, then restore it with revert.")
+                format!("The {k} is deleted. See cx context {n} revisions {ID}, then restore it with revert.")
             );
             assert_eq!(
                 msg(

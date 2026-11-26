@@ -12,7 +12,7 @@ fn entry(kind: &str, subjects: Value, deleted: bool, revision: u64) -> Value {
     json!({
         "id": ID, "kind": kind, "title": "Pool size", "summary": "Check it first.",
         "body": "Old body.\n", "subjects": subjects, "team_wide": team_wide,
-        "source": "case 42", "change_note": "old note", "deleted": deleted, "revision": revision,
+        "change_note": "old note", "deleted": deleted, "revision": revision,
         "created_at": "2026-11-01T09:00:00Z", "updated_at": "2026-11-08T10:00:00Z",
         "updated_by": { "user_id": "u-1", "name": "Dana", "credential": "user_token" },
     })
@@ -88,7 +88,7 @@ async fn update_reads_then_puts_the_merged_entry() {
         serve_get(&server, noun, entry(kind, checkout(), false, 4)).await;
         let request = json!({
             "title": "New title", "summary": "Check it first.", "body": "Old body.\n",
-            "subjects": checkout(), "source": "case 42",
+            "subjects": checkout(),
             "expected_revision": 4, "change_note": "renamed",
         });
         let mut updated = entry(kind, checkout(), false, 5);
@@ -129,26 +129,20 @@ async fn update_reads_then_puts_the_merged_entry() {
 }
 
 #[tokio::test]
-async fn update_scope_transitions_and_source() {
+async fn update_scope_transitions() {
     let alert = json!([{ "type": "alert", "value": "8f3a2c1e-5b7d-4e2a-9c1f-0d6b3a4e5f60" }]);
-    let cases: [(Value, &[&str], Value); 3] = [
+    let cases: [(Value, &[&str], Value); 2] = [
         (
             checkout(),
             &["--team-wide"],
             json!({ "title": "Pool size", "summary": "Check it first.", "body": "Old body.\n",
-                    "team_wide": true, "source": "case 42", "expected_revision": 2 }),
+                    "team_wide": true, "expected_revision": 2 }),
         ),
         (
             json!([]),
             &["--subject", "alert:8f3a2c1e-5b7d-4e2a-9c1f-0d6b3a4e5f60"],
             json!({ "title": "Pool size", "summary": "Check it first.", "body": "Old body.\n",
-                    "subjects": alert, "source": "case 42", "expected_revision": 2 }),
-        ),
-        (
-            checkout(),
-            &["--no-source"],
-            json!({ "title": "Pool size", "summary": "Check it first.", "body": "Old body.\n",
-                    "subjects": checkout(), "expected_revision": 2 }),
+                    "subjects": alert, "expected_revision": 2 }),
         ),
     ];
     for (subjects, flags, request) in cases {
@@ -180,7 +174,7 @@ async fn update_body_from_file_and_stdin() {
         .await;
         let request = json!({
             "title": "Pool size", "summary": "Check it first.", "body": "New body.\n",
-            "subjects": checkout(), "source": "case 42", "expected_revision": 1,
+            "subjects": checkout(), "expected_revision": 1,
         });
         let response = ResponseTemplate::new(200).set_body_json(receipt(entry(
             "instruction",
@@ -225,7 +219,7 @@ async fn update_stops_before_writing_over_a_deleted_or_changed_entry() {
         let cases = [
             (
                 entry(kind, checkout(), true, 4),
-                format!("The {kind} is deleted. See cx context {noun} history {ID}, then restore it with revert."),
+                format!("The {kind} is deleted. See cx context {noun} revisions {ID}, then restore it with revert."),
             ),
             (
                 entry(kind, checkout(), false, 6),
@@ -355,7 +349,7 @@ async fn delete_errors() {
         let cases = [
             (
                 json!({ "code": "deleted", "message": "already deleted" }),
-                format!("The {kind} is deleted. See cx context {noun} history {ID}, then restore it with revert."),
+                format!("The {kind} is deleted. See cx context {noun} revisions {ID}, then restore it with revert."),
             ),
             (
                 json!({ "code": "revision_conflict", "message": "stale", "current_revision": 7 }),

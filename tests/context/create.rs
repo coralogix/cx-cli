@@ -17,7 +17,7 @@ fn receipt(kind: &str, subjects: Value, deleted: bool, revision: u64) -> Value {
         "entry": {
             "id": ID, "kind": kind, "title": "Pool size", "summary": "Check it first.",
             "body": "The body.\n", "subjects": subjects, "team_wide": team_wide,
-            "source": null, "change_note": null, "deleted": deleted, "revision": revision,
+            "change_note": null, "deleted": deleted, "revision": revision,
             "created_at": "2026-11-01T09:00:00Z", "updated_at": "2026-11-08T10:00:00Z",
             "updated_by": { "user_id": null, "name": null, "credential": "team_api_key" },
         },
@@ -77,15 +77,14 @@ async fn create_with_subjects_saves_and_prints_receipt() {
     for (noun, kind) in KINDS {
         let request = json!({
             "id": ID, "title": "Pool size", "summary": "Check it first.", "body": "The body.\n",
-            "subjects": checkout(), "source": "case 42",
+            "subjects": checkout(),
         });
         let response =
             ResponseTemplate::new(201).set_body_json(receipt(kind, checkout(), false, 1));
         let server = serve(noun, Some(request), response).await;
         let home = Home::new();
         let body = body_file(&home);
-        let mut args = create_args(noun, &body, &SUBJECT_FLAGS);
-        args.extend(["--source", "case 42"]);
+        let args = create_args(noun, &body, &SUBJECT_FLAGS);
         let output = run(&home, &server, "text", &args);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
         let found_by = match kind {

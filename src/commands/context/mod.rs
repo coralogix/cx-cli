@@ -16,7 +16,7 @@ use crate::render;
 use api::Subject;
 pub use entries::{run_entry_get, run_query, Filter};
 pub use get::run_get;
-pub use history::{run_entry_history, run_team_history, HistoryFilter};
+pub use history::{run_entry_revisions, run_team_history, HistoryFilter};
 pub use subjects::run_subjects;
 pub use write::{
     run_create, run_delete, run_revert, run_update, Confirmation, CreateArgs, UpdateArgs,

@@ -18,10 +18,6 @@ pub struct HistoryFilter {
     #[arg(long)]
     pub author: Option<String>,
 
-    /// Case-insensitive substring of the entry's source.
-    #[arg(long)]
-    pub source: Option<String>,
-
     /// Only changes to this kind of entry.
     #[arg(long)]
     pub kind: Option<Kind>,
@@ -42,7 +38,6 @@ pub async fn run_team_history(
     let target = single_target(targets)?;
     let query = HistoryQuery {
         author: filter.author.clone(),
-        source: filter.source.clone(),
         kind: filter.kind,
         since: filter
             .since
@@ -63,7 +58,7 @@ pub async fn run_team_history(
     }
 }
 
-pub async fn run_entry_history(
+pub async fn run_entry_revisions(
     targets: &[Arc<ExecutionTarget>],
     kind: Kind,
     id: &str,
@@ -74,12 +69,12 @@ pub async fn run_entry_history(
     let target = single_target(targets)?;
     eprintln!(
         "{}",
-        format!("Reading {} history...", kind.singular()).dimmed()
+        format!("Reading {} revisions...", kind.singular()).dimmed()
     );
     let reply = api::entry_revisions(&target.client, kind, id, limit, offset).await?;
     match output {
         OutputFormat::Text => {
-            println!("{}", render_entry_history(&reply.data));
+            println!("{}", render_entry_revisions(&reply.data));
             Ok(())
         }
         _ => print_raw(&reply.raw, output),
@@ -131,7 +126,7 @@ fn render_page<T>(page: &Page<T>, headers: &[&str], row_of: impl Fn(&T) -> Vec<S
     )
 }
 
-pub fn render_entry_history(page: &Page<RevisionItem>) -> String {
+pub fn render_entry_revisions(page: &Page<RevisionItem>) -> String {
     render_page(
         page,
         &[
@@ -189,7 +184,7 @@ mod tests {
 
     #[test]
     fn entry_rows_show_operations_authors_and_seconds() {
-        let text = render_entry_history(&page(
+        let text = render_entry_revisions(&page(
             vec![
                 revision(4, "revert", Some(2), Some("Dana")),
                 revision(3, "delete", None, None),
@@ -230,7 +225,7 @@ mod tests {
     #[test]
     fn empty_and_past_the_end() {
         assert_eq!(
-            render_entry_history(&page(vec![], 0, 0)),
+            render_entry_revisions(&page(vec![], 0, 0)),
             "No changes found."
         );
         assert_eq!(

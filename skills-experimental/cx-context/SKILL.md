@@ -11,7 +11,7 @@ description: >
   "undo a context change". Not for unrelated code or local-machine
   troubleshooting, or for the agent's personal memory.
 metadata:
-  version: "0.3.0"
+  version: "0.3.1"
   internal: "true"
 ---
 
@@ -73,17 +73,16 @@ cx context memories create --yes \
   --title 'Checkout pool waits during the November 8 deployment' \
   --summary 'Production checkout timeouts coincided with pool saturation; trigger unknown.' \
   --subject service:checkout \
-  --source 'case 6d1f0c2a-3b4e-4f5a-8b9c-7e6d5c4b3a21' \
   --body-file note.md                # or --body-file - to read stdin
 ```
 
-If a create fails without a clear answer, retry it with the ID the error names (`--id <UUID>`) and exactly the same title, summary, body, source and subjects: that does not save twice. Changed content with the same ID is refused; do not drop `--id` unless you are sure the first attempt saved nothing. Say a memory was saved only after `cx` confirms it.
+If a create fails without a clear answer, retry it with the ID the error names (`--id <UUID>`) and exactly the same title, summary, body and subjects: that does not save twice. Changed content with the same ID is refused; do not drop `--id` unless you are sure the first attempt saved nothing. Say a memory was saved only after `cx` confirms it.
 
 What to write:
 
 - Compact facts or short bullets; one sentence is enough for a small fact.
 - A title and summary that let a reader decide whether to open it, with the distinguishing symptom, component and scope.
-- When it was observed and where it comes from. The saved date is not the observation date, and `--source` is not searched, so put the words someone would search for in the title, summary or body.
+- When it was observed and where it comes from (a case, an alert event, a link) in the body; a case or alert the memory is about is a subject. The saved date is not the observation date.
 - When a memory holds both observations and conclusions, mark the lines `Observed:` and `Inferred:`, and state what is still uncertain. Do not present a hypothesis as a cause. For unfinished work, record what was checked and what was ruled out.
 - Exact names, error text, and the queries or `cx` commands that reproduce the finding.
 - Only the structure the content needs. The body must make sense without this conversation.
@@ -142,13 +141,13 @@ cx context memories update <ID> --expected-revision 1 --yes \
   --summary 'Read when checkout times out after a deploy or a config push.' \
   --change-note 'Also seen after config pushes'
 cx context memories delete <ID> --expected-revision 2 --yes
-cx context memories history <ID>
+cx context memories revisions <ID>
 cx context memories get <ID> --revision 2
 cx context memories revert <ID> --to-revision 2 --expected-revision 3 --yes
 cx context history --since now-7d --kind memory
 ```
 
-`update` keeps the content fields not given; `--change-note` applies to that revision only. `--subject` replaces all subjects, `--team-wide` removes them, `--no-source` clears the source. The same commands exist under `cx context instructions`.
+`update` keeps the content fields not given; `--change-note` applies to that revision only. `--subject` replaces all subjects, `--team-wide` removes them. `revisions <ID>` lists the revisions of one entry. The same commands exist under `cx context instructions`. `cx context history` is separate: it lists changes across the team, for both kinds.
 
 ## Additional resources
 

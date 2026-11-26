@@ -131,7 +131,7 @@ async fn invalid_numbers_are_usage_errors() {
             "99999999999999999999999",
         ],
         &["context", "instructions", "search", "x", "--limit", "0"],
-        &["context", "memories", "history", "id", "--limit", "201"],
+        &["context", "memories", "revisions", "id", "--limit", "201"],
         &["context", "memories", "get", "id", "--revision", "0"],
         &[
             "context",
@@ -228,17 +228,6 @@ async fn scope_flags_conflict() {
             "--team-wide",
             "--subject",
             "a:b",
-        ],
-        &[
-            "context",
-            "memories",
-            "update",
-            "id",
-            "--expected-revision",
-            "1",
-            "--source",
-            "s",
-            "--no-source",
         ],
         &[
             "context",

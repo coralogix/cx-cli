@@ -39,10 +39,6 @@ pub struct CreateArgs {
     #[arg(long, value_name = "PATH")]
     pub body_file: String,
 
-    /// Where the content came from (a case, an alert event, a link).
-    #[arg(long)]
-    pub source: Option<String>,
-
     /// Entry ID to use instead of a new UUID; pass the same ID to retry a failed create.
     #[arg(long, value_name = "UUID")]
     pub id: Option<String>,
@@ -96,7 +92,6 @@ pub async fn run_create(
             body,
             subjects,
             team_wide: args.team_wide,
-            source: args.source,
         },
     };
     eprintln!("{}", format!("Saving {}...", kind.singular()).dimmed());
@@ -138,14 +133,6 @@ pub struct UpdateArgs {
     #[arg(long, value_name = "PATH")]
     pub body_file: Option<String>,
 
-    /// New source.
-    #[arg(long, conflicts_with = "no_source")]
-    pub source: Option<String>,
-
-    /// Clear the source.
-    #[arg(long)]
-    pub no_source: bool,
-
     /// Why the entry changed.
     #[arg(long)]
     pub change_note: Option<String>,
@@ -159,12 +146,10 @@ struct Edits {
     body: Option<String>,
     subjects: Vec<Subject>,
     team_wide: bool,
-    source: Option<String>,
-    no_source: bool,
 }
 
 /// The full replacement: what the command line gives, otherwise the entry's own
-/// title, summary, body, source and subject set.
+/// title, summary, body and subject set.
 fn merge(current: &Entry, edits: Edits) -> EntryContent {
     let (subjects, team_wide) = if !edits.subjects.is_empty() {
         (edits.subjects, false)
@@ -172,11 +157,6 @@ fn merge(current: &Entry, edits: Edits) -> EntryContent {
         (Vec::new(), true)
     } else {
         (current.index.subjects.clone(), current.team_wide)
-    };
-    let source = if edits.no_source {
-        None
-    } else {
-        edits.source.or_else(|| current.source.clone())
     };
     EntryContent {
         title: edits.title.unwrap_or_else(|| current.index.title.clone()),
@@ -186,7 +166,6 @@ fn merge(current: &Entry, edits: Edits) -> EntryContent {
         body: edits.body.unwrap_or_else(|| current.body.clone()),
         subjects,
         team_wide,
-        source,
     }
 }
 
@@ -231,8 +210,6 @@ pub async fn run_update(
         body,
         subjects,
         team_wide: args.team_wide,
-        source: args.source,
-        no_source: args.no_source,
     };
     let req = UpdateRequest {
         content: merge(&current, edits),
@@ -385,7 +362,7 @@ mod tests {
         serde_json::from_value(json!({
             "entry": {
                 "id": ID, "kind": kind, "title": "T", "summary": "S", "body": "B",
-                "subjects": subjects, "team_wide": team_wide, "source": null,
+                "subjects": subjects, "team_wide": team_wide,
                 "change_note": null, "deleted": deleted, "revision": revision,
                 "created_at": "2026-11-01T09:00:00Z", "updated_at": "2026-11-08T10:00:00Z",
                 "updated_by": { "user_id": null, "name": null, "credential": "team_api_key" },
@@ -449,9 +426,7 @@ mod tests {
     }
 
     fn current() -> Entry {
-        let mut entry = receipt("memory", with_subjects(), false, 4).entry;
-        entry.source = Some("case 12".into());
-        entry
+        receipt("memory", with_subjects(), false, 4).entry
     }
 
     fn subjects_of(value: Value) -> Vec<Subject> {
@@ -463,7 +438,7 @@ mod tests {
         let merged = merge(&current(), Edits::default());
         assert_eq!(
             serde_json::to_value(&merged).unwrap(),
-            json!({ "title": "T", "summary": "S", "body": "B", "subjects": with_subjects(), "source": "case 12" })
+            json!({ "title": "T", "summary": "S", "body": "B", "subjects": with_subjects() })
         );
     }
 
@@ -480,8 +455,6 @@ mod tests {
         assert_eq!((m.title.as_str(), m.summary.as_str()), ("T", "S2"));
         let m = edits(|e| e.body = Some("B2".into()));
         assert_eq!((m.body.as_str(), m.title.as_str()), ("B2", "T"));
-        let m = edits(|e| e.source = Some("alert 9".into()));
-        assert_eq!(m.source.as_deref(), Some("alert 9"));
         assert_eq!(m.subjects, subjects_of(with_subjects()));
     }
 
@@ -527,22 +500,6 @@ mod tests {
         assert!(merged.subjects.is_empty());
         assert!(merged.team_wide);
         assert_eq!(serde_json::to_value(&merged).unwrap()["team_wide"], true);
-    }
-
-    #[test]
-    fn merge_no_source_clears_it() {
-        let merged = merge(
-            &current(),
-            Edits {
-                no_source: true,
-                ..Edits::default()
-            },
-        );
-        assert_eq!(merged.source, None);
-        assert!(serde_json::to_value(&merged)
-            .unwrap()
-            .get("source")
-            .is_none());
     }
 
     #[test]

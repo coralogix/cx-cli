@@ -70,8 +70,6 @@ async fn team_history_query_strings() {
             &[
                 "--author",
                 "Dana Lee",
-                "--source",
-                "incident review",
                 "--kind",
                 "instruction",
                 "--since",
@@ -83,7 +81,6 @@ async fn team_history_query_strings() {
             ],
             map(&[
                 ("author", "Dana Lee"),
-                ("source", "incident review"),
                 ("kind", "instruction"),
                 ("since", "2026-11-01T00:00:00.000Z"),
                 ("limit", "5"),
@@ -231,10 +228,17 @@ async fn entry_history_requests_and_text() {
                 &server,
                 "text",
                 &[
-                    "context", noun, "history", ID, "--limit", "3", "--offset", "0",
+                    "context",
+                    noun,
+                    "revisions",
+                    ID,
+                    "--limit",
+                    "3",
+                    "--offset",
+                    "0",
                 ],
             ),
-            &format!("Reading {kind} history..."),
+            &format!("Reading {kind} revisions..."),
         );
         assert_eq!(
             query_of(&server).await,
@@ -261,8 +265,8 @@ async fn entry_history_json_toon_and_empty_pages() {
         let route = format!("/mgmt/api/v1/agent-context/{noun}/{ID}/revisions");
         let response = page(vec![revision(1, "create", None, Some("Dana"))], 1, 0);
         let home = Home::new();
-        let args = ["context", noun, "history", ID];
-        let status = format!("Reading {kind} history...");
+        let args = ["context", noun, "revisions", ID];
+        let status = format!("Reading {kind} revisions...");
 
         let server = serve(&route, response.clone()).await;
         let out = ok(&run(&home, &server, "json", &args), &status);
@@ -279,7 +283,7 @@ async fn entry_history_json_toon_and_empty_pages() {
                 &home,
                 &server,
                 "text",
-                &["context", noun, "history", ID, "--offset", "20"],
+                &["context", noun, "revisions", ID, "--offset", "20"],
             ),
             &status,
         );
@@ -299,7 +303,7 @@ async fn entry_history_not_found_names_the_entry() {
             .mount(&server)
             .await;
         let home = Home::new();
-        let out = run(&home, &server, "text", &["context", noun, "history", ID]);
+        let out = run(&home, &server, "text", &["context", noun, "revisions", ID]);
         assert_eq!(out.status.code(), Some(1), "{out:?}");
         assert!(
             stderr(&out).contains(&format!(

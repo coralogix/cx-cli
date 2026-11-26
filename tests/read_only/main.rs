@@ -196,7 +196,7 @@ fn read_only_allows_context_reads() {
         &["history"],
         &["memories", "list"],
         &["instructions", "get", "x"],
-        &["memories", "history", "x"],
+        &["memories", "revisions", "x"],
     ];
     for args in reads {
         let stderr = context_under_read_only(args);

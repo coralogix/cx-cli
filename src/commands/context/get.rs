@@ -281,7 +281,7 @@ mod tests {
                 "deleted": false, "revision": 1, "created_at": "2026-11-01T00:00:00Z",
                 "updated_at": "2026-11-02T00:00:00Z",
                 "updated_by": { "user_id": null, "name": "Dana", "credential": "user_token" },
-                "body": "Page the owner.\n", "source": null, "team_wide": true, "change_note": null,
+                "body": "Page the owner.\n", "team_wide": true, "change_note": null,
             }}],
             "memories": { "items": [], "total": 0, "limit": 50, "offset": 0 },
             "team_wide_memories": 0, "memories_total": 0,

@@ -1041,8 +1041,8 @@ async fn run_context_entry_cmd(
         ContextEntryCmd::Get { id, revision } => {
             ctx::run_entry_get(targets, kind, &id, revision, output).await
         }
-        ContextEntryCmd::History { id, paging } => {
-            ctx::run_entry_history(targets, kind, &id, paging.limit, paging.offset, output).await
+        ContextEntryCmd::Revisions { id, paging } => {
+            ctx::run_entry_revisions(targets, kind, &id, paging.limit, paging.offset, output).await
         }
         ContextEntryCmd::Update { id, args } => {
             ctx::run_update(targets, kind, &id, args, confirmation, output).await
@@ -1168,7 +1168,7 @@ enum ContextEntryCmd {
     },
 
     /// Show the revisions of one entry, newest first.
-    History {
+    Revisions {
         /// Entry ID.
         id: String,
 

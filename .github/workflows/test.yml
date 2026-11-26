@@ -55,6 +55,16 @@ jobs:
           oidc-provider-name: github
           oidc-audience: jfrog-github
 
+      - name: Inspect published cli-otel registry checksum
+        if: steps.filter.outputs.code == 'true' && matrix.os == 'ubuntu-latest'
+        env:
+          CARGO_REGISTRIES_CORALOGIX_INTERNAL_TOKEN: Bearer ${{ steps.jfrog.outputs.oidc-token }}
+        run: |
+          curl --fail --silent --show-error \
+            -H "Authorization: ${CARGO_REGISTRIES_CORALOGIX_INTERNAL_TOKEN}" \
+            https://cgx.jfrog.io/artifactory/api/cargo/internal.rust.coralogix.net/index/cl/i-/cli-otel \
+            | jq -r 'select(.vers == "0.1.0") | "cli-otel 0.1.0 checksum: \(.cksum)"'
+
       - name: Install Linux system dependencies
         if: steps.filter.outputs.code == 'true' && runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config

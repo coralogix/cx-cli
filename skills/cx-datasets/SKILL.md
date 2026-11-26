@@ -3,14 +3,15 @@ name: cx-datasets
 description: >
   Discover the datasets a Coralogix team can query with the `cx datasets` CLI —
   the fully qualified `<dataspace>/<dataset>` names DataPrime `source` commands
-  need. Use when the user asks to "list datasets", "what datasets do we have",
+  need — and the fields (keypaths) each one holds, with sample values. Use when the user asks to "list datasets", "what datasets do we have",
   "which datasets can I query", "find datasets", "show dataspaces", "discover
   datasets", "what data does this team have", "available DataPrime sources",
   "filter datasets by pillar", "queryable sources", "dataset names for
-  DataPrime", or wants to enumerate or filter the queryable datasets before
-  running a DataPrime query.
+  DataPrime", "what fields does this dataset have", "list a dataset's fields",
+  "sample values of a field", or wants to enumerate or filter the queryable datasets before
+  running a DataPrime query, or to see which fields a dataset has.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # Datasets Skill
@@ -27,6 +28,8 @@ queryable instead of guessing names.
 |---|---|---|
 | `cx datasets list` | List every dataset queryable by the current profile's team | `--filter <DPXL>` |
 | `cx datasets list -o json` | Same, as a JSON array of dataset rows | - |
+| `cx datasets fields` | List a dataset's fields as DataPrime keypaths, with their types | `--dataset`, `--exact`, `--prefix`, `--contains`, `--start`/`--end` |
+| `cx datasets field-values '<keypath>'` | Show sample values of one field | `--dataset`, `--label-filter`, `--exact`/`--prefix`/`--contains` (on values) |
 
 - Supports `-p <profile>` (repeatable) for multi-profile fan-out; a `profile`
   key is added to each JSON row when more than one profile is targeted.
@@ -63,7 +66,17 @@ text output is the copy-pasteable `source` argument.
    cx datasets list --filter "<v1> \$d.dataset.contains('rum')" -o json
    ```
 
-3. **Query the dataset** with DataPrime, using the full source name:
+3. **See which fields it has** before writing a filter, and check real values:
+
+   ```bash
+   cx datasets fields --dataset system/engine.queries --contains duration
+   cx datasets field-values '$d.payment.status' --label-filter applicationName=checkout
+   ```
+
+   See `cx-telemetry-querying` for the full field-discovery workflow and how
+   it compares with `cx search-fields`.
+
+4. **Query the dataset** with DataPrime, using the full source name:
 
    ```bash
    cx dataprime query --source default/checkoutservice_dataset 'filter $d.severity == ERROR'
@@ -101,4 +114,5 @@ substring), not an infix `contains` operator.
 ## Related Skills
 
 - **`cx-telemetry-querying`** — run the DataPrime queries against the datasets
-  discovered here (logs, spans, metrics, RUM).
+  discovered here (logs, spans, metrics, RUM), and find fields by name
+  (`cx datasets fields`), meaning or value (`cx search-fields`).

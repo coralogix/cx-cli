@@ -425,7 +425,7 @@ show the normal first-use approval prompt.
 | `no_console_link` | `false` | Suppress "View in Coralogix" console links globally (equivalent to always passing `--no-console-link`) |
 | `auto_update_skills` | `true` | After a cx upgrade, refresh the global cx agent skills in the background, pinned to the new version. Only for global cx skills that are older than the new version (installed with `cx skills install --global`, an older cx, or `npx` directly), and only when `npx` is on `PATH`. `CX_NO_SKILLS_AUTO_UPDATE=1` also turns it off. |
 | `allow_risky_commands` | `true` | Allow write operations under risky commands (`iam`, `archive`). Written when you create your first profile; never prompted. |
-| `olly_enabled` | `true` | Enable the Olly AI assistant. `false` blocks every `cx olly` command except `olly artifacts`. Written when you create your first profile; never prompted. Use `cx profiles add --disable-olly` to create it switched off. |
+| `olly_enabled` | `true` | Enable the Olly AI assistant (every `cx olly` command). Written when you create your first profile; never prompted. Use `cx profiles add --disable-olly` to create it switched off. |
 
 Example:
 

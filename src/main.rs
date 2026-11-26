@@ -74,6 +74,129 @@ pub enum SearchByValueDataset {
     All,
 }
 
+#[derive(Subcommand)]
+enum DatasetsCmd {
+    /// List the datasets queryable by the current team's API key.
+    ///
+    /// Each row is a fully qualified `<dataspace>/<dataset>` name usable in a
+    /// DataPrime `source` command. Only read-enabled, latest-version datasets
+    /// are returned.
+    #[command(after_help = "\
+Examples:
+  cx datasets list
+  cx datasets list --filter \"<v1> \\$d.pillar == 'logs'\"
+  cx datasets list --filter \"<v1> \\$d.dataspace == 'default'\" -o json")]
+    List {
+        /// DPXL filter over $d.dataspace, $d.dataset, $d.pillar, $d.entityType and $d.teamId.
+        /// Must start with the version tag, e.g. "<v1> \$d.pillar == 'logs'".
+        #[arg(long)]
+        filter: Option<String>,
+    },
+
+    /// Search the fields (DataPrime keypaths) observed in one or more datasets, with their
+    /// DataPrime types.
+    ///
+    /// Repeating --exact, --prefix or --contains means any of its values; different flags must
+    /// all hold.
+    #[command(after_help = "\
+Examples:
+  cx datasets fields --contains pod
+  cx datasets fields --prefix '$d.kubernetes' --prefix '$d.k8s'
+  cx datasets fields --prefix '$l' --prefix '$m' --dataset logs --dataset spans
+  cx datasets fields --exact \"\\$d.tags['http.method']\" --label-filter subsystemName=api --start now-24h")]
+    Fields(FieldsSearchArgs),
+
+    /// Show sample values of one field.
+    ///
+    /// Repeating --exact, --prefix or --contains means any of its values. Values are matched
+    /// against the samples Schema Store keeps, not every value in the data.
+    #[command(after_help = "\
+Examples:
+  cx datasets field-values '$m.severity'
+  cx datasets field-values \"\\$d.tags['http.method']\" --label-filter applicationName=checkout --label-filter applicationName=payments
+  cx datasets field-values '$l.subsystemName' --dataset logs --dataset spans --start now-6h
+  cx datasets field-values '$d.kubernetes.pod_name' --prefix checkout- --prefix payments-")]
+    FieldValues(FieldValuesArgs),
+}
+
+#[derive(Args)]
+struct FieldsSearchArgs {
+    /// Dataset as 'dataset' (in the default dataspace) or 'dataspace/dataset'. Repeat for
+    /// several (up to 100); results are the union.
+    #[arg(long = "dataset", default_value = "logs")]
+    datasets: Vec<String>,
+
+    /// Exactly this field, in DataPrime syntax (case-insensitive). Repeatable.
+    #[arg(long)]
+    exact: Vec<String>,
+
+    /// Fields starting with this, e.g. '$d.kubernetes', or '$l' for all labels
+    /// (case-insensitive). Without '$d', '$l' or '$m' it is user data. Repeatable.
+    #[arg(long)]
+    prefix: Vec<String>,
+
+    /// Fields containing this (case-insensitive). Repeatable.
+    #[arg(long)]
+    contains: Vec<String>,
+
+    /// Only fields seen with this label value, as 'name=value'. Repeat a name to allow
+    /// several values; different names must all match.
+    #[arg(long = "label-filter")]
+    labels: Vec<String>,
+
+    /// Start time in ISO 8601 or relative format (at most 7 days before --end).
+    #[arg(long, default_value = "now-1h")]
+    start: String,
+
+    /// End time in ISO 8601 or relative format.
+    #[arg(long, default_value = "now")]
+    end: String,
+
+    /// Maximum number of fields (server default 100, at most 1000).
+    #[arg(long)]
+    limit: Option<u32>,
+}
+
+#[derive(Args)]
+struct FieldValuesArgs {
+    /// Field in DataPrime syntax, as `datasets fields` prints it.
+    keypath: String,
+
+    /// Dataset as 'dataset' (in the default dataspace) or 'dataspace/dataset'. Repeat for
+    /// several (up to 100); results are the union.
+    #[arg(long = "dataset", default_value = "logs")]
+    datasets: Vec<String>,
+
+    /// Only values that are exactly this (case-insensitive). Repeatable.
+    #[arg(long)]
+    exact: Vec<String>,
+
+    /// Only values starting with this (case-insensitive). Repeatable.
+    #[arg(long)]
+    prefix: Vec<String>,
+
+    /// Only values containing this (case-insensitive). Repeatable.
+    #[arg(long)]
+    contains: Vec<String>,
+
+    /// Only values seen with this label value, as 'name=value'. Repeat a name to allow
+    /// several values; different names must all match.
+    #[arg(long = "label-filter")]
+    labels: Vec<String>,
+
+    /// Start time in ISO 8601 or relative format (at most 7 days before --end).
+    #[arg(long, default_value = "now-1h")]
+    start: String,
+
+    /// End time in ISO 8601 or relative format.
+    #[arg(long, default_value = "now")]
+    end: String,
+
+    /// Maximum number of values (server default 20, at most 100).
+    #[arg(long)]
+    limit: Option<u32>,
+}
+
 /// Coralogix CLI - the observability backbone for AI agents and engineering teams.
 #[derive(Parser)]
 #[command(
@@ -90,7 +213,7 @@ pub enum SearchByValueDataset {
   \x1b[1mdataprime\x1b[0m          DataPrime language reference and raw queries
   \x1b[1mdocs\x1b[0m               Search and fetch official Coralogix product documentation
   \x1b[1msearch-fields\x1b[0m      Search log/span fields by description or value content
-  \x1b[1mdatasets\x1b[0m           List queryable datasets for DataPrime sources
+  \x1b[1mdatasets\x1b[0m           Inspect datasets, their fields and sample values
 
 \x1b[1m\x1b[4mObserve:\x1b[0m
   \x1b[1mdashboards\x1b[0m         Manage dashboards and dashboard folders
@@ -813,12 +936,7 @@ Examples:
         offset: u32,
     },
 
-    /// List the datasets queryable by the current team, for DataPrime sources.
-    #[command(after_help = "\
-Examples:
-  cx datasets list
-  cx datasets list --filter \"<v1> \\$d.pillar == 'logs'\"
-  cx datasets list -o json")]
+    /// Inspect datasets, their fields and sample values.
     Datasets {
         #[command(subcommand)]
         cmd: DatasetsCmd,
@@ -845,6 +963,7 @@ Examples:
   cx olly ask \"What alerts fired today?\"
   cx olly ask \"Show me error logs\" --chat-id <id>
   cx olly ask \"Analyze this metric\" --model claude-sonnet-4-5
+  cx olly artifacts list --chat-id <chat-id>
   cx olly artifacts get <artifact-id>
   cx olly rules list
   cx olly rules create --rule \"Answer in English\" --team --yes")]
@@ -863,7 +982,7 @@ impl Commands {
     }
 
     fn is_olly(&self) -> bool {
-        matches!(self, Self::Olly { cmd } if !matches!(cmd, OllyCmd::Artifacts { .. }))
+        matches!(self, Self::Olly { .. })
     }
 }
 
@@ -932,9 +1051,9 @@ Examples:
         #[arg(long)]
         set_default: bool,
         /// When creating the first profile, disable the Olly AI assistant
-        /// (every `cx olly` command except `artifacts`). Olly is enabled by
-        /// default; this opts out. Only affects first-profile setup, where
-        /// the global Olly setting is written. No prompt either way.
+        /// (`cx olly`). Olly is enabled by default; this opts out. Only
+        /// affects first-profile setup, where the global Olly setting is
+        /// written. No prompt either way.
         #[arg(long)]
         disable_olly: bool,
         /// Labels for this profile, such as `prod` or `eu`.
@@ -1100,26 +1219,6 @@ Example:
     Fetch {
         /// Path suffix from `cx docs search` (not a full URL).
         suffix: String,
-    },
-}
-
-#[derive(Subcommand)]
-enum DatasetsCmd {
-    /// List the datasets queryable by the current team's API key.
-    ///
-    /// Each row is a fully qualified `<dataspace>/<dataset>` name usable in a
-    /// DataPrime `source` command. Only read-enabled, latest-version datasets
-    /// are returned.
-    #[command(after_help = "\
-Examples:
-  cx datasets list
-  cx datasets list --filter \"<v1> \\$d.pillar == 'logs'\"
-  cx datasets list --filter \"<v1> \\$d.dataspace == 'default'\" -o json")]
-    List {
-        /// DPXL filter over $d.dataspace, $d.dataset, $d.pillar, $d.entityType and $d.teamId.
-        /// Must start with the version tag, e.g. "<v1> \$d.pillar == 'logs'".
-        #[arg(long)]
-        filter: Option<String>,
     },
 }
 
@@ -1344,12 +1443,45 @@ fn parse_rule_id(raw: &str) -> Result<String, String> {
 
 #[derive(Subcommand)]
 enum OllyArtifactsCmd {
-    /// List all artifacts.
+    /// List artifacts, newest first.
     #[command(after_help = "\
 Examples:
   cx olly artifacts list
-  cx olly artifacts list -o json")]
-    List,
+  cx olly artifacts list -o json
+  cx olly artifacts list --chat-id <chat-id>
+  cx olly artifacts list --type coralogix_metrics --start now-1d
+  cx olly artifacts list --start 2026-01-01T00:00:00Z --end 2026-01-02T00:00:00Z
+  cx olly artifacts list --limit 5 --offset 5
+  cx olly artifacts list --chat-id <chat-id> --type sandbox_generated_file --limit 20 -o json")]
+    List {
+        /// Only artifacts from this chat.
+        #[arg(long)]
+        chat_id: Option<String>,
+
+        /// Only artifacts of this type.
+        #[arg(
+            long = "type",
+            value_name = "ARTIFACT_TYPE",
+            value_parser = clap::builder::PossibleValuesParser::new(commands::olly::api::ARTIFACT_TYPES)
+        )]
+        artifact_type: Option<String>,
+
+        /// Only artifacts created at or after this time (ISO 8601 or relative, e.g. now-1h).
+        #[arg(long)]
+        start: Option<String>,
+
+        /// Only artifacts created at or before this time (ISO 8601 or relative).
+        #[arg(long)]
+        end: Option<String>,
+
+        /// Maximum number of artifacts to return. The server returns 100 when unset.
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        limit: Option<u32>,
+
+        /// Number of artifacts to skip, for paging.
+        #[arg(long)]
+        offset: Option<u32>,
+    },
 
     /// Get an artifact's download URL.
     #[command(after_help = "\
@@ -5007,7 +5139,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Olly gating (everything under `cx olly` except `artifacts`).
+    // Olly gating (every `cx olly` subcommand).
     if cli.command.is_olly() && !global_cfg_early.olly_enabled {
         bail!(
             "The Olly AI assistant is currently disabled in your global configuration.\n\
@@ -5357,12 +5489,6 @@ async fn main() -> Result<()> {
             Commands::Schema => unreachable!("handled above"),
             Commands::Completions { .. } => unreachable!("handled above"),
             Commands::Docs { .. } => unreachable!("handled above"),
-
-            Commands::Datasets { cmd } => match cmd {
-                DatasetsCmd::List { filter } => {
-                    commands::datasets::run_list(&targets, filter.as_deref(), output).await?;
-                }
-            },
 
             Commands::Dataprime { cmd } => match cmd {
                 DataprimeCmd::List { .. } | DataprimeCmd::Show { .. } => {
@@ -7200,6 +7326,52 @@ async fn main() -> Result<()> {
                 }
             },
 
+            Commands::Datasets { cmd } => match cmd {
+                DatasetsCmd::List { filter } => {
+                    commands::datasets::run_list(&targets, filter.as_deref(), output).await?;
+                }
+                DatasetsCmd::Fields(FieldsSearchArgs {
+                    datasets,
+                    exact,
+                    prefix,
+                    contains,
+                    labels,
+                    start,
+                    end,
+                    limit,
+                }) => {
+                    let request = commands::datasets::fields_api::SearchKeypathsRequest {
+                        datasets: commands::datasets::fields::parse_datasets(&datasets)?,
+                        time_range: commands::datasets::fields::time_range(&start, &end)?,
+                        keypath_filter: commands::datasets::fields::text_filter(exact, prefix, contains),
+                        dimension_filter: commands::datasets::fields::parse_labels(&labels)?,
+                        limit,
+                    };
+                    commands::datasets::fields::run_search(&targets, &request, output).await?;
+                }
+                DatasetsCmd::FieldValues(FieldValuesArgs {
+                    keypath,
+                    datasets,
+                    exact,
+                    prefix,
+                    contains,
+                    labels,
+                    start,
+                    end,
+                    limit,
+                }) => {
+                    let request = commands::datasets::fields_api::GetKeypathSamplesRequest {
+                        datasets: commands::datasets::fields::parse_datasets(&datasets)?,
+                        keypath,
+                        time_range: commands::datasets::fields::time_range(&start, &end)?,
+                        dimension_filter: commands::datasets::fields::parse_labels(&labels)?,
+                        limit,
+                        value_filter: commands::datasets::fields::text_filter(exact, prefix, contains),
+                    };
+                    commands::datasets::fields::run_samples(&targets, &request, output).await?;
+                }
+            },
+
             Commands::Olly { cmd } => match cmd {
                 OllyCmd::Ask {
                     message,
@@ -7220,8 +7392,23 @@ async fn main() -> Result<()> {
                     .await?;
                 }
                 OllyCmd::Artifacts { cmd } => match cmd {
-                    OllyArtifactsCmd::List => {
-                        commands::olly::run_artifacts_list(&targets, output).await?;
+                    OllyArtifactsCmd::List {
+                        chat_id,
+                        artifact_type,
+                        start,
+                        end,
+                        limit,
+                        offset,
+                    } => {
+                        let filters = commands::olly::api::ArtifactListFilters {
+                            chat_id,
+                            artifact_type,
+                            start,
+                            end,
+                            limit,
+                            offset,
+                        };
+                        commands::olly::run_artifacts_list(&targets, filters, output).await?;
                     }
                     OllyArtifactsCmd::Get { artifact_id } => {
                         commands::olly::run_artifacts_get(
@@ -7379,5 +7566,39 @@ mod tests {
     #[test]
     fn parse_completions_shell_rejects_garbage() {
         assert!(parse_completions_shell("not-a-shell").is_err());
+    }
+
+    fn datasets_command(args: &[&str]) -> Result<DatasetsCmd, clap::Error> {
+        let cli = Cli::try_parse_from(["cx", "datasets"].iter().chain(args))?;
+        match cli.command {
+            Commands::Datasets { cmd } => Ok(cmd),
+            _ => panic!("not a datasets command"),
+        }
+    }
+
+    #[test]
+    fn datasets_fields_takes_the_search_flags() {
+        match datasets_command(&["fields", "--contains", "pod"]).unwrap() {
+            DatasetsCmd::Fields(search) => assert_eq!(search.contains, ["pod"]),
+            _ => panic!("not a search"),
+        }
+    }
+
+    #[test]
+    fn datasets_field_values_takes_the_field() {
+        match datasets_command(&["field-values", "$m.severity"]).unwrap() {
+            DatasetsCmd::FieldValues(values) => assert_eq!(values.keypath, "$m.severity"),
+            _ => panic!("not field values"),
+        }
+    }
+
+    #[test]
+    fn global_options_work_before_a_datasets_subcommand() {
+        for args in [
+            &["-o", "json", "field-values", "$m.severity"][..],
+            &["--read-only", "fields", "--contains", "pod"],
+        ] {
+            assert!(datasets_command(args).is_ok(), "{args:?}");
+        }
     }
 }

@@ -214,7 +214,7 @@ pub struct Config {
     pub allow_risky_commands: bool,
 
     /// Whether the Olly AI assistant is enabled.
-    /// When false, every `cx olly` command except `artifacts` is blocked.
+    /// When false, every `cx olly` command is blocked.
     #[serde(default = "default_true")]
     pub olly_enabled: bool,
 

@@ -16,7 +16,7 @@ Use this skill to interact with Coralogix's Observability Agent (Olly) via the `
 | Command | Purpose | Key flags |
 |---|---|---|
 | `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--timeout`, `--agent-to-agent-mode` |
-| `cx olly artifacts list` | List generated artifacts, newest first | `--chat-id`, `--type`, `--start`, `--end`, `--limit`, `--offset` |
+| `cx olly artifacts list` | List generated artifacts, newest first | `--chat-id`, `--type`, `--start`/`--end` (creation time), `--limit`, `--offset` |
 | `cx olly artifacts get <id>` | Get artifact content by ID | - |
 
 **Output format:** append `-o json` or `-o toon` for machine-readable output.
@@ -131,10 +131,10 @@ Output behavior:
 cx olly ask "Why is the checkout service showing high latency? Check logs with 'checkout:' strings and aws related metrics" --agent-to-agent-mode
 
 # Follow up with the chat ID from the response — also background and poll
-cx olly ask "What changed in the last hour?" --chat-id abc-123-def --agent-to-agent-mode
+cx olly ask "What changed in the last hour?" --chat-id 3f2b8c1e-7a4d-4e9b-9c2a-1d5e6f7a8b9c --agent-to-agent-mode
 
 # Once the interaction has completed, get any generated charts
-cx olly artifacts list --chat-id abc-123-def -o json | jq -r '.[].id'
+cx olly artifacts list --chat-id 3f2b8c1e-7a4d-4e9b-9c2a-1d5e6f7a8b9c -o json | jq -r '.[].id'
 cx olly artifacts get <artifact-id>
 ```
 

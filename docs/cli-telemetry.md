@@ -30,7 +30,8 @@ removed from loopback HTTP requests.
 
 For cx-only setup, `CX_OTLP_ENDPOINT` is the exact traces URL and `CX_OTLP_API_KEY` is
 sent as a Bearer token. The Coralogix application and subsystem headers are supplied by
-the library's Coralogix feature. The export deadline is capped at one second for command responsiveness.
+the library's Coralogix feature. The export timeout defaults to one second and can be
+changed with the supported timeout environment variables.
 
 `TRACEPARENT` and `TRACESTATE` are accepted as optional parent context inputs. Export
 failures never change the command result or exit status.

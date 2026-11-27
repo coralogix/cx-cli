@@ -4,7 +4,7 @@ Copy these templates when generating a dashboard. **Always replace every UUID** 
 
 For query-language rules:
 
-- Dashboard-specific gotchas (`${__range}`, `promqlQueryType`, widget filters): [`query-syntax.md`](query-syntax.md).
+- Dashboard-specific gotchas (`${__range}` vs `${__rate_interval}`, `promqlQueryType`, widget filters): [`query-syntax.md`](query-syntax.md).
 - Full DataPrime syntax: `cx-dataprime` skill → `skills/cx-dataprime/references/dataprime-reference.md`.
 - Full PromQL reference: `cx-metrics-query` skill → `skills/cx-metrics-query/references/promql-guidelines.md`.
 
@@ -41,9 +41,13 @@ A row always looks like:
 {
   "id": {"value": "<uuid>"},
   "appearance": {"height": 19},
-  "widgets": [ /* 1–2 widgets per row */ ]
+  "widgets": [ /* 1–2 charts or tables per row; up to 4 stat or gauge widgets */ ]
 }
 ```
+
+A row of stat widgets can be lower: `"appearance": {"height": 12}`.
+
+Every widget type accepts an optional `"description": "<one sentence>"` next to `title`, for what the title leaves open: what is counted, what is excluded.
 
 ---
 
@@ -152,6 +156,8 @@ Use for small-cardinality breakdowns (≤8 slices) from a metrics query.
 
 Use for anything over time from a metrics query (rates, latencies, counts per bucket).
 
+A range vector here uses `${__rate_interval}` (with `rate`) or `${__interval}` (with `increase`): see [`query-syntax.md`](query-syntax.md) §1.
+
 ```json
 {
   "id": {"value": "<uuid>"},
@@ -165,12 +171,13 @@ Use for anything over time from a metrics query (rates, latencies, counts per bu
           "id": "<uuid>",
           "query": {
             "metrics": {
-              "promqlQuery": {"value": "histogram_quantile(0.95, sum by (le, stage) (rate(foo_latency_bucket[${__range}])))"},
+              "promqlQuery": {"value": "histogram_quantile(0.95, sum by (le, stage) (rate(foo_latency_bucket[${__rate_interval}])))"},
               "filters": [],
               "editorMode": "METRICS_QUERY_EDITOR_MODE_TEXT",
               "seriesLimitType": "METRICS_SERIES_LIMIT_TYPE_BY_SERIES_COUNT"
             }
           },
+          "seriesNameTemplate": "{{stage}}",
           "seriesCountLimit": "20",
           "unit": "UNIT_SECONDS",
           "scaleType": "SCALE_TYPE_LINEAR",
@@ -191,8 +198,9 @@ Use for anything over time from a metrics query (rates, latencies, counts per bu
 }
 ```
 
-- For counts (not latency) use `"unit": "UNIT_UNSPECIFIED"`.
-- Multiple lines in the same panel: add more objects to `queryDefinitions` (each with its own `id`).
+- For counts (not latency) use `"unit": "UNIT_UNSPECIFIED"`. For a latency metric in milliseconds use `"UNIT_MILLISECONDS"`; see *Unit enum quick-reference*.
+- `seriesNameTemplate` names each line after a label of the result: `"{{stage}}"`, or `"{{service_name}} {{status}}"` for two grouping labels. Set it whenever the query has a `by (...)` clause; otherwise the legend shows the raw label set.
+- Multiple lines in the same panel: add more objects to `queryDefinitions` (each with its own `id`), and give each a `"name"` (`"p50"`, `"p95"`, `"p99"`) next to `id` and a `seriesNameTemplate` that starts with the same text (`"p95"`, or `"p95 {{stage}}"` when grouped). Otherwise the legend shows `Query 1`, `Query 2`.
 
 ---
 
@@ -315,11 +323,36 @@ A top-N result is one number per category, so it also fits the bar and pie rows.
 }
 ```
 
+A stat query returns one column, the one the stat shows. Helper columns (`aggregate count() as requests, count_if(...) as errors | create error_rate from ...`) make the tile draw a legend over the number and colour it by the wrong threshold: end such a query with `| choose error_rate`.
+
+A stat takes a unit and thresholds like a gauge does. For a latency in milliseconds that turns yellow at 1 second and red at 2:
+
+```json
+"visualization": {"stat": {
+  "valueFields": [{"keypath": ["p95_ms"], "scope": "DATASET_SCOPE_USER_DATA"}],
+  "unit": "UNIT_MILLISECONDS",
+  "decimalPrecision": 0,
+  "thresholds": [
+    {"from": 0,    "color": "var(--c-visualization-green-05)"},
+    {"from": 1000, "color": "var(--c-visualization-yellow-05)"},
+    {"from": 2000, "color": "var(--c-visualization-red-05)"}
+  ],
+  "thresholdType": "THRESHOLD_TYPE_ABSOLUTE",
+  "thresholdBy": "THRESHOLD_BY_BACKGROUND"
+}}
+```
+
+Span durations (`$m.duration`) are in microseconds: either divide by 1000 in the query and use `UNIT_MILLISECONDS`, or keep the raw value and use `UNIT_MICROSECONDS`.
+
+The bar and time-series visualizations take `unit` too: at the top level of `horizontalBars` / `verticalBars` / `timeSeriesBars`, and per entry of `queryDisplaySettings[]` in `timeSeriesLinesMulti`.
+
 ---
 
 ## Top-level filters
 
-Add one entry per slicing dimension the user approved. Users fill in `values` at view time.
+Add one entry per slicing dimension the user named. Users fill in `values` at view time.
+
+A filter narrows only widgets of its own source: the `metrics` filters below narrow PromQL widgets and leave logs, spans and DataPrime widgets unchanged. Add a filter only when it applies to most widgets of the dashboard. A filter the user did not name shows as an empty chip above the dashboard, also when the data has many clusters or tenants, so with no named dimension emit `"filters": []`.
 
 **Exclude non-prod environments** (replace the example values with whatever the target deployment actually uses, e.g. `["dev", "staging", "test"]`):
 
@@ -390,13 +423,20 @@ Logs, spans and DataPrime widgets ship with `DATA_MODE_TYPE_ARCHIVE`. On an acco
 
 ## Unit enum quick-reference
 
+Set the unit that matches the value the query returns; the widget formats it, so the title stays free of units.
+
 | Value | When |
 |---|---|
 | `UNIT_UNSPECIFIED` | raw counts, unitless ratios |
-| `UNIT_NUMBER` | explicit integer count |
-| `UNIT_SECONDS` | durations/latency |
-| `UNIT_PERCENT` | percentages 0–100 |
-| `UNIT_BYTES` | sizes |
+| `UNIT_NUMBER` | explicit integer count, typed `gauge` only. `lineChart`, `pieChart` and `dynamic` visualizations use `UNIT_UNSPECIFIED` for counts |
+| `UNIT_NANOSECONDS`, `UNIT_MICROSECONDS`, `UNIT_MILLISECONDS`, `UNIT_SECONDS` | durations and latency, in the unit the query returns |
+| `UNIT_PERCENT_ZERO_HUNDRED` | a percentage already on a 0–100 scale (`100 * errors / total`) |
+| `UNIT_PERCENT_ZERO_ONE` | a ratio on a 0–1 scale (`errors / total`), shown as a percentage |
+| `UNIT_PERCENT` | a value shown as a percentage of the widget's `min`..`max`. Fits a typed `gauge` with `min: 0, max: 100` |
+| `UNIT_BYTES`, `UNIT_KBYTES`, `UNIT_MBYTES`, `UNIT_GBYTES` | sizes, decimal (1000-based) |
+| `UNIT_BYTES_IEC`, `UNIT_KIBYTES`, `UNIT_MIBYTES`, `UNIT_GIBYTES` | sizes, binary (1024-based) |
+| `UNIT_USD`, `UNIT_USD_CENTS`, `UNIT_EUR`, `UNIT_EUR_CENTS` | money |
+| `UNIT_CUSTOM` | anything else: set `"customUnit": "req/s"` next to it |
 
 ---
 

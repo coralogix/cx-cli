@@ -22,7 +22,7 @@ Parse `relativeTimeFrame` from the draft (default `"172800s"` = 48h) into a huma
 
 ## 2. Verify each PromQL query
 
-For every widget whose definition contains a `promqlQuery`, substitute `${__range}` in the expression with `[$RANGE]` (e.g. `[48h]`). Leave any other fixed window (`[5m]`, `[1h]`) untouched - those were placed intentionally for sliding-rate panels.
+For every widget whose definition contains a `promqlQuery`, substitute `${__range}` in the expression with `[$RANGE]` (e.g. `[48h]`), and `${__rate_interval}` / `${__interval}` (used by `lineChart` widgets) with `[5m]`. Leave any other fixed window (`[5m]`, `[1h]`) untouched - those were placed intentionally for sliding-rate panels.
 
 **Instant-style widgets** (`gauge` / `pieChart` / dynamic table with `promqlQueryType: PROM_QL_QUERY_TYPE_INSTANT`):
 
@@ -86,6 +86,6 @@ Check both the exit code and the output — some errors surface only in the outp
 
 ## 4. Restore `${__range}` before Phase 6
 
-Once every PromQL and DataPrime query passes, restore `${__range}` (and any other variables) in the emitted JSON. PromQL verification swapped `${__range}` for the concrete `[$RANGE]`; the final JSON keeps the injected variable intact. (DataPrime queries don't carry `${__range}`, so nothing to restore there beyond keeping the `source logs` / `source spans` prefix in the widget JSON.)
+Once every PromQL and DataPrime query passes, restore `${__range}`, `${__rate_interval}` and `${__interval}` (and any other variables) in the emitted JSON. PromQL verification swapped them for concrete windows; the final JSON keeps the injected variables intact. (DataPrime queries don't carry `${__range}`, so nothing to restore there beyond keeping the `source logs` / `source spans` prefix in the widget JSON.)
 
 If any query can't be made to pass within the retry budget, surface it to the user with the CLI error verbatim - don't silently ship a broken widget.

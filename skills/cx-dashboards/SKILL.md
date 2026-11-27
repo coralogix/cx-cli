@@ -9,7 +9,7 @@ description: >
   deploy, update, replace, or modify a Coralogix dashboard, monitoring dashboard,
   or observability dashboard for a service, app, or pipeline.
 metadata:
-  version: "0.2.2"
+  version: "0.2.3"
 ---
 
 # Create Coralogix Dashboard
@@ -92,7 +92,7 @@ Dashboard Progress:
 - [ ] Phase 9: Share the dashboard link with the user
 ```
 
-Proceed in order. Don't jump to Phase 4 before the user approves the Phase 3 plan, and don't run Phase 8 before Phases 5–7 all pass. Phase 9 is mandatory — the workflow is not done until the user has a clickable link.
+Proceed in order. Run Phase 8 only after Phases 5–7 all pass. Phase 3 says when to stop for approval. Phase 9 is mandatory — the workflow is not done until the user has a clickable link.
 
 ---
 
@@ -122,18 +122,18 @@ Ask the user a focused set (≤6). Prefer `AskQuestion`:
 
 1. **Audience & use** - on-call triage, product/business tracking, capacity planning, customer success?
 2. **Default time range** - typical viewing window (e.g. 24h, 7d). Queries still use `${__range}` so users can zoom.
-3. **Slicing dimensions** - top-level filters (`tenant_id`, `account_id`, `subsystem_name`, `region`, `env`, …).
+3. **Slicing dimensions** - top-level filters (`tenant_id`, `account_id`, `subsystem_name`, `region`, `env`, …). This one is never inferred: a filter exists only for a dimension the user names.
 4. **Environment scope** - which environments to include/exclude (common default: exclude `dev`, `staging`, `test`).
 5. **SLO-ish signals** - success-rate, latency, or throughput targets to highlight?
 6. **Priorities** - what to see first (drives row ordering and which section is `collapsed: true`).
 
-Don't block on answers you can reasonably infer - state the inference and continue.
+Don't block on answers you can reasonably infer - state the inference and continue. When the request already names what the dashboard shows ("a dashboard for X with traffic, latency and errors"), skip the questions and list your assumptions in the plan.
 
 ---
 
 ## Phase 3: Draft the internal plan
 
-Write a markdown plan the user can approve before JSON generation:
+Write a markdown plan before JSON generation:
 
 ```
 ## Dashboard: <Service> - <Purpose>
@@ -149,7 +149,7 @@ Write a markdown plan the user can approve before JSON generation:
 ...
 
 ### Top-level filters
-- <label> (<source>)
+- <label> (<source>), for each dimension the user named; otherwise `none`
 
 ### Assumptions / gaps
 - ...
@@ -160,6 +160,7 @@ Write a markdown plan the user can approve before JSON generation:
 - Pair related time-series in the same row (rate + latency).
 - Final section (raw logs, rare breakdowns): `collapsed: true`.
 - Aim for 3–5 sections, 6–20 widgets total.
+- Headline numbers share one row of up to 4 stat widgets at row height `12`; a chart row holds 1–2 widgets.
 
 **Widget-type selection**:
 
@@ -175,7 +176,7 @@ Don't use other widget types unless the user asks.
 
 **Logs, spans and DataPrime widgets are `dynamic`, and visualized.** Never emit the legacy `dataTable` widget, for any query: a PromQL top-N table is a `dynamic` widget with a `metrics` query and a `table` visualization. Use `definition.dynamic` and set its `visualization` to the chart the query's shape calls for; `table` is right only for raw rows the user wants to read. Alias every column in the query and map the visualization to the aliases. Shape-to-visualization table and templates: `references/widget-templates.md` → *Widget: dynamic*.
 
-Wait for the user to approve or adjust the plan before emitting JSON.
+**When to stop for approval.** A request to create, build or deploy the dashboard is the approval: show the plan with its assumptions and continue to Phase 4 in the same turn, because an unattended run that stops here delivers no dashboard. Stop and wait in two cases: the user asked to review the plan first, or a choice you cannot infer changes what gets built (two services with the same name, no telemetry for a signal they named).
 
 ---
 
@@ -201,8 +202,12 @@ Produce a single JSON document following [`references/widget-templates.md`](refe
 2. **IDs** - fresh UUIDs for every `section`, `row`, `widget`, and query `id`.
 3. **Row height** - `"appearance": { "height": 19 }` unless there's a reason to change.
 4. **Section options** - include `options.custom.name`, `collapsed`, and `color.predefined: "SECTION_PREDEFINED_COLOR_UNSPECIFIED"`.
-5. **Filters** - one entry per slicing dimension from Phase 2. Default operator `equals` with empty `values` so users can fill in. Use `notEquals` for environment exclusions (see [`references/widget-templates.md`](references/widget-templates.md)).
+5. **Filters** - one entry per slicing dimension the user named, in the request or in a Phase 2 answer, and only when it applies to most widgets: a `metrics` filter narrows PromQL widgets only. A dimension you found in the data (many clusters, many tenants) is an assumption for the plan, where the user can ask for it; it is not a filter. Default operator `equals` with empty `values` so users can fill in. Use `notEquals` for environment exclusions (see [`references/widget-templates.md`](references/widget-templates.md)). With no requested dimension, emit `"filters": []`.
 6. **relativeTimeFrame** - default `"172800s"` (48h) unless the user specified otherwise.
+7. **Units** - set `unit` on every widget whose value has one (latency, bytes, percent, currency), and keep the unit out of the title: `"Checkout p95"` with `UNIT_MILLISECONDS`. Enum: `references/widget-templates.md` → *Unit enum quick-reference*.
+8. **Series names** - a grouped PromQL chart sets `seriesNameTemplate` to the grouping label (`"{{service_name}}"`); each query of a multi-query chart gets a `name` and a `seriesNameTemplate` that say which query it is (`"p95"`). Otherwise the legend shows the raw label set or `Query 1`, `Query 2`.
+9. **Descriptions** - a widget gets a one-sentence `description` when its title leaves open what is counted, what is excluded, or which statuses count as errors.
+10. **Thresholds on headline numbers** - a stat or gauge for an error count, error rate, success rate or latency carries `thresholds`, so its colour says good or bad.
 
 For query syntax follow [`references/query-syntax.md`](references/query-syntax.md); for the full query languages load [`references/dataprime-reference.md`](references/dataprime-reference.md) and [`references/promql-guidelines.md`](references/promql-guidelines.md).
 
@@ -233,8 +238,10 @@ If `target.archiveSpec.isActive` is `false`, or the target has no bucket, the ac
 
 The two languages are verified against different windows:
 
-- **PromQL**: map `relativeTimeFrame` to a `$RANGE` token (e.g. `48h` for `172800s`), substitute `${__range}` with `[$RANGE]` for the CLI call, then restore `${__range}` in the JSON before Phase 6. Range vectors are window-sensitive, so the check has to match what the dashboard will evaluate.
+- **PromQL**: map `relativeTimeFrame` to a `$RANGE` token (e.g. `48h` for `172800s`), substitute `${__range}` with `[$RANGE]` (and `${__rate_interval}` / `${__interval}` with `[5m]`) for the CLI call, then restore the variables in the JSON before Phase 6. Range vectors are window-sensitive, so the check has to match what the dashboard will evaluate.
 - **DataPrime**: verify against a fixed short window (`now-15m` → `now`, `--limit 1`). The goal is syntax / field / pipeline validation, not data-presence on the dashboard's window — a short window is faster and a cleaner fail signal.
+
+**Verify all queries in one command.** Put the queries in a file or a loop and run them in a single tool call, printing each widget's title before its result. Re-run only the queries that failed. One call per query costs a model round trip each.
 
 Full procedure (CLI invocations, `$RANGE` mapping table, retry budget, failure modes): [`references/verification.md`](references/verification.md).
 
@@ -247,11 +254,11 @@ If a query can't be made to pass within the retry budget, surface it to the user
 Run this checklist against the final JSON. Fix and re-check if any item fails before Phase 7.
 
 ### Query syntax (dashboard-specific)
-- [ ] Every PromQL range vector in a metrics widget uses `[${__range}]` - never `[$__range]`, never `[5m]` (unless the panel is intentionally a sliding window).
+- [ ] PromQL range vectors use `[${__range}]` in single-value widgets (gauge, pieChart, dynamic table or stat) and `[${__rate_interval}]` / `[${__interval}]` in `lineChart` widgets, where `[${__range}]` flattens the line into an average over the whole dashboard range. Never `[$__range]` (missing braces), never `[5m]` (unless the panel is intentionally a sliding window). Table: [`references/query-syntax.md`](references/query-syntax.md) §1.
 - [ ] `promqlQueryType` is `PROM_QL_QUERY_TYPE_INSTANT` for single-value widgets (gauge, pieChart, dynamic table). Omitted for `lineChart`.
 - [ ] DataPrime log queries use `$d.<field>` / `$l.applicationname` / unquoted severity enums (full rules: [`references/dataprime-reference.md`](references/dataprime-reference.md)).
 - [ ] Every DataPrime widget query starts with `source logs` or `source spans` (dashboard widgets require the source prefix; Phase 5 verification strips it before handing the pipeline to `cx logs` / `cx spans`).
-- [ ] Success-rate denominators wrapped in `clamp_min(..., 1)`.
+- [ ] Success-rate denominators in single-value widgets wrapped in `clamp_min(..., 1)`; unclamped in a `lineChart`.
 - [ ] Histogram queries use the correct suffix (`_sum`, `_count`, `_bucket`).
 - [ ] Widget queries are valid **without** the dashboard-level `filters` - Coralogix injects them at render time.
 
@@ -262,7 +269,10 @@ Run this checklist against the final JSON. Fix and re-check if any item fails be
 - [ ] Every gauge has numeric `min` and `max`, and `min < max`.
 - [ ] Success-rate gauges use `thresholdType: "THRESHOLD_TYPE_ABSOLUTE"` with green at high values; error/DLQ gauges use red at high values.
 - [ ] Metrics "Total" / "stat" widgets are encoded as `gauge`. A logs, spans or DataPrime total is a `dynamic` widget with a `stat` visualization.
-- [ ] Top-level `filters` includes each slicing dimension from Phase 2.
+- [ ] Top-level `filters` holds the slicing dimensions the user asked for, and nothing else.
+- [ ] Every latency, size, percent or currency widget sets `unit`, and its title carries no unit.
+- [ ] Every grouped PromQL chart sets `seriesNameTemplate`; every query in a multi-query chart has a `name`.
+- [ ] Every `stat` query returns one column, the one in `valueFields`.
 - [ ] All IDs are freshly generated UUIDs, unique within the document.
 - [ ] Every `queryDisplaySettings[].queryId` equals the `id` of a `queryDefinitions[]` entry in the same widget. `cx dashboards check` accepts a mismatch, and the widget then renders empty.
 
@@ -290,8 +300,8 @@ Phase 6 caught structural issues by hand. This phase runs the whole dashboard th
 Don't tell the user to paste JSON into the Coralogix UI - deploy it directly.
 
 1. List folders: `cx dashboards folders list -o json`.
-2. Suggest the best folder match (team, product area, or a folder named after the service). Default to root (omit `--folder`) if nothing fits.
-3. Write the verified JSON to a temp file and run `cx dashboards create --from-file /tmp/cx-dashboard-<slug>.json --folder <id>`. The CLI generates the `requestId` envelope and prints the created dashboard ID.
+2. Use the folder the user named. Otherwise suggest the best match (team, product area, or a folder named after the service) and default to root (omit `--folder`) if nothing fits. A folder named after a person is never a match.
+3. Write the verified JSON to a temp file and run `cx dashboards create --from-file /tmp/cx-dashboard-<slug>.json --folder <id> --yes`. Without `--yes`, `create` asks for confirmation and fails in a non-interactive shell; the user's request to create the dashboard is that confirmation. The CLI generates the `requestId` envelope and prints the created dashboard ID.
 
 Full procedure (folder-picking UX, command templates, idempotency note): [`references/deploy.md`](references/deploy.md).
 

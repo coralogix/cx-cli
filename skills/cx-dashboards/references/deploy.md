@@ -6,20 +6,19 @@ Don't tell the user to paste JSON into the Coralogix UI - deploy the dashboard d
 
 ## 1. Pick a folder
 
-List folders and suggest the best match:
+List the folders:
 
 ```bash
 cx dashboards folders list -o json
 ```
 
-Rank the existing folders by relevance (service name, team, product area) and present the top matches with `AskQuestion`:
+Pick the folder in this order, and say in the final output which one you used:
 
-- "Folder X (id: `<id>`) - best match by name"
-- "Folder Y (id: `<id>`)"
-- "Root (no folder)"
-- "None of these - I'll create a folder in the Coralogix UI first"
+1. The folder the user named.
+2. The best match by service name, team or product area. A folder named after a person is never a match.
+3. Root (omit `--folder`).
 
-Default to "Root" if nothing fits.
+Ask the user to choose, with `AskQuestion`, only when they said they want to pick the folder. Offer the top matches, "Root (no folder)" and "A new folder" (section 2).
 
 ---
 
@@ -45,7 +44,7 @@ If folder creation fails (most common cause: API key missing the `team-dashboard
 2. Deploy into the chosen folder (omit `--folder` for root):
 
    ```bash
-   cx dashboards create --from-file /tmp/cx-dashboard-<slug>.json --folder <folder-id>
+   cx dashboards create --from-file /tmp/cx-dashboard-<slug>.json --folder <folder-id> --yes
    ```
 
 The CLI generates the `requestId` envelope automatically and prints the created dashboard ID and name on success. Pipe into `-o json` or `-o toon` for structured output.

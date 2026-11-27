@@ -350,9 +350,9 @@ The bar and time-series visualizations take `unit` too: at the top level of `hor
 
 ## Top-level filters
 
-Add one entry per slicing dimension the user asked for. Users fill in `values` at view time.
+Add one entry per slicing dimension the user named. Users fill in `values` at view time.
 
-A filter narrows only widgets of its own source: the `metrics` filters below narrow PromQL widgets and leave logs, spans and DataPrime widgets unchanged. Add a filter only when it applies to most widgets of the dashboard. A filter the user did not ask for shows as an empty chip above the dashboard, so with no requested dimension emit `"filters": []`.
+A filter narrows only widgets of its own source: the `metrics` filters below narrow PromQL widgets and leave logs, spans and DataPrime widgets unchanged. Add a filter only when it applies to most widgets of the dashboard. A filter the user did not name shows as an empty chip above the dashboard, also when the data has many clusters or tenants, so with no named dimension emit `"filters": []`.
 
 **Exclude non-prod environments** (replace the example values with whatever the target deployment actually uses, e.g. `["dev", "staging", "test"]`):
 

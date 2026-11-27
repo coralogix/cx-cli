@@ -122,7 +122,7 @@ Ask the user a focused set (≤6). Prefer `AskQuestion`:
 
 1. **Audience & use** - on-call triage, product/business tracking, capacity planning, customer success?
 2. **Default time range** - typical viewing window (e.g. 24h, 7d). Queries still use `${__range}` so users can zoom.
-3. **Slicing dimensions** - top-level filters (`tenant_id`, `account_id`, `subsystem_name`, `region`, `env`, …).
+3. **Slicing dimensions** - top-level filters (`tenant_id`, `account_id`, `subsystem_name`, `region`, `env`, …). This one is never inferred: a filter exists only for a dimension the user names.
 4. **Environment scope** - which environments to include/exclude (common default: exclude `dev`, `staging`, `test`).
 5. **SLO-ish signals** - success-rate, latency, or throughput targets to highlight?
 6. **Priorities** - what to see first (drives row ordering and which section is `collapsed: true`).
@@ -149,7 +149,7 @@ Write a markdown plan before JSON generation:
 ...
 
 ### Top-level filters
-- <label> (<source>)
+- <label> (<source>), for each dimension the user named; otherwise `none`
 
 ### Assumptions / gaps
 - ...
@@ -202,7 +202,7 @@ Produce a single JSON document following [`references/widget-templates.md`](refe
 2. **IDs** - fresh UUIDs for every `section`, `row`, `widget`, and query `id`.
 3. **Row height** - `"appearance": { "height": 19 }` unless there's a reason to change.
 4. **Section options** - include `options.custom.name`, `collapsed`, and `color.predefined: "SECTION_PREDEFINED_COLOR_UNSPECIFIED"`.
-5. **Filters** - one entry per slicing dimension the user asked for in Phase 2, and only when it applies to most widgets: a `metrics` filter narrows PromQL widgets only. Default operator `equals` with empty `values` so users can fill in. Use `notEquals` for environment exclusions (see [`references/widget-templates.md`](references/widget-templates.md)). With no requested dimension, emit `"filters": []`.
+5. **Filters** - one entry per slicing dimension the user named, in the request or in a Phase 2 answer, and only when it applies to most widgets: a `metrics` filter narrows PromQL widgets only. A dimension you found in the data (many clusters, many tenants) is an assumption for the plan, where the user can ask for it; it is not a filter. Default operator `equals` with empty `values` so users can fill in. Use `notEquals` for environment exclusions (see [`references/widget-templates.md`](references/widget-templates.md)). With no requested dimension, emit `"filters": []`.
 6. **relativeTimeFrame** - default `"172800s"` (48h) unless the user specified otherwise.
 7. **Units** - set `unit` on every widget whose value has one (latency, bytes, percent, currency), and keep the unit out of the title: `"Checkout p95"` with `UNIT_MILLISECONDS`. Enum: `references/widget-templates.md` → *Unit enum quick-reference*.
 8. **Series names** - a grouped PromQL chart sets `seriesNameTemplate` to the grouping label (`"{{service_name}}"`); each query of a multi-query chart gets a `name` and a `seriesNameTemplate` that say which query it is (`"p95"`). Otherwise the legend shows the raw label set or `Query 1`, `Query 2`.

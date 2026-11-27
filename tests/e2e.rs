@@ -28,6 +28,8 @@ mod alerts;
 mod api_keys;
 #[path = "e2e/cases/mod.rs"]
 mod cases;
+#[path = "e2e/configuration_management.rs"]
+mod configuration_management;
 #[path = "e2e/connectors.rs"]
 mod connectors;
 #[path = "e2e/contextual_data.rs"]

@@ -5,6 +5,8 @@ pub mod api_keys;
 pub mod cases;
 pub mod cleanup;
 pub mod completions;
+pub mod configuration_groups;
+pub mod configuration_overlays;
 pub mod connectors;
 pub mod contextual_data;
 pub mod custom_enrichments;

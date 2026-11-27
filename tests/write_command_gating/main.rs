@@ -181,6 +181,75 @@ fn parsing_rules_delete() {
 }
 
 #[test]
+fn configuration_groups_create() {
+    assert_gated(
+        &["configuration-groups", "create", "--from-file", "/dev/null"],
+        "configuration-groups create",
+    );
+}
+
+#[test]
+fn configuration_groups_update() {
+    assert_gated(
+        &[
+            "configuration-groups",
+            "update",
+            "group-id",
+            "--update-mask",
+            "description",
+            "--from-file",
+            "/dev/null",
+        ],
+        "configuration-groups update",
+    );
+}
+
+#[test]
+fn configuration_groups_archive() {
+    assert_gated(
+        &["configuration-groups", "archive", "group-id"],
+        "configuration-groups archive",
+    );
+}
+
+#[test]
+fn configuration_overlays_create() {
+    assert_gated(
+        &[
+            "configuration-overlays",
+            "create",
+            "--from-file",
+            "/dev/null",
+        ],
+        "configuration-overlays create",
+    );
+}
+
+#[test]
+fn configuration_overlays_update() {
+    assert_gated(
+        &[
+            "configuration-overlays",
+            "update",
+            "overlay-id",
+            "--update-mask",
+            "description",
+            "--from-file",
+            "/dev/null",
+        ],
+        "configuration-overlays update",
+    );
+}
+
+#[test]
+fn configuration_overlays_archive() {
+    assert_gated(
+        &["configuration-overlays", "archive", "overlay-id"],
+        "configuration-overlays archive",
+    );
+}
+
+#[test]
 fn enrichments_add() {
     assert_gated(
         &["enrichments", "add", "--from-file", "/dev/null"],

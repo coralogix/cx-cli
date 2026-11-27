@@ -24,7 +24,7 @@ Rust toolchain is pinned to **1.96.1** via `rust-toolchain.toml`.
 
 ## Command Hierarchy
 
-The CLI is organized into 29 commands grouped by domain. `cx --help` shows this layout:
+The CLI is organized into commands grouped by domain. `cx --help` shows this layout:
 
 ```
 Query:
@@ -60,6 +60,10 @@ Data Pipeline:
   enrichments        Manage enrichment rules and custom enrichment tables
   e2m                Manage Events2Metrics definitions
   recording-rules    Manage Prometheus recording rule groups
+
+Fleet Management:
+  configuration-groups   Manage Fleet Manager configuration groups
+  configuration-overlays Manage Fleet Manager configuration overlays
 
 Cost & Storage:
   usage              View data usage and consumption metrics
@@ -154,7 +158,7 @@ Config lives in `~/.cx/`. Environment variables `CX_PROFILE`, `CX_API_KEY`, `CX_
 
 ### Skills
 
-`skills/` contains Claude Code skill plugins for AI-driven observability investigation. Ten skills cover all CLI commands: `cx-telemetry-querying` (logs, spans, metrics, RUM, DataPrime — gateway with pillar-specific reference files), `cx-alerts`, `cx-cases`, `cx-slos`, `cx-dashboards`, `cx-infra`, `cx-cost-optimization`, `cx-data-pipeline`, `cx-observability-setup`, and `cx-platform-admin`. Shared reference files (DataPrime syntax, PromQL guidelines, telemetry-pillar how-tos) live in `skills/shared/` and are distributed to consuming skills via `scripts/sync-shared-references.sh`.
+`skills/` contains Claude Code skill plugins for AI-driven observability investigation. The skills cover all CLI commands: `cx-telemetry-querying` (logs, spans, metrics, RUM, DataPrime — gateway with pillar-specific reference files), `cx-alerts`, `cx-cases`, `cx-slos`, `cx-dashboards`, `cx-infra`, `cx-cost-optimization`, `cx-data-pipeline`, `cx-observability-setup`, and `cx-platform-admin`. Shared reference files (DataPrime syntax, PromQL guidelines, telemetry-pillar how-tos) live in `skills/shared/` and are distributed to consuming skills via `scripts/sync-shared-references.sh`.
 
 ### Documentation
 
@@ -210,6 +214,8 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx webhooks` | `cx-observability-setup` | Covered |
 | `cx notifications` | `cx-observability-setup` | Covered |
 | `cx integrations` | `cx-observability-setup` | Covered |
+| `cx configuration-groups` | `cx-observability-setup` | Covered |
+| `cx configuration-overlays` | `cx-observability-setup` | Covered |
 | `cx schema` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx olly` | `cx-olly` | Covered |
 | `cx infra` | `cx-infra` | Covered |

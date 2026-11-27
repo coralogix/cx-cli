@@ -33,7 +33,7 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 | `cx-slos` | Manage SLO definitions - list, inspect, check error budgets, create/update/delete |
 | `cx-data-pipeline` | Configure data processing - parsing rules, enrichments, Events2Metrics, recording rules |
 | `cx-platform-admin` | Manage access and security - API keys, roles, users, groups, IP access |
-| `cx-observability-setup` | Set up monitoring - saved views, webhooks, notifications, integrations |
+| `cx-observability-setup` | Set up monitoring - saved views, webhooks, notifications, integrations, and Fleet Manager configuration groups and overlays |
 | `cx-rum-setup` | Add RUM to a browser or mobile app - RUM API key, SDK install and init, verify events arrive |
 | `cx-cli` | Cross-cutting `cx` behavior that applies to every command, such as update notifications |
 
@@ -177,6 +177,7 @@ Once installed, your agent uses the relevant skill automatically. Example querie
 - "Why is the checkout page slow for users?"
 - "Debug the 500 errors on the payment endpoint"
 - "Which of our EC2 instances were unhealthy this week?"
+- "Manage my Fleet configuration groups and overlays"
 - "Show me the top 5 services by p99 latency in the last hour"
 - "What is the checkout service spending its CPU on?"
 - "How can we reduce our Coralogix costs?"

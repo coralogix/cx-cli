@@ -1,18 +1,20 @@
 //! Stale-resource sweeper for the writable e2e team.
 //!
 //! Every write test names its resources with [`harness::unique_name`] and
-//! deletes them on exit (also on panic, through [`harness::Cleanup`]). A
+//! removes them from active use on exit (also on panic, through
+//! [`harness::Cleanup`]). A
 //! killed runner or a lost network can still leave resources behind, so CI
 //! runs this sweeper before the suite. It lists each resource type, keeps
 //! only names produced by `unique_name` in a *different* run that are older
-//! than [`MAX_AGE`], and deletes those. Resources from the current run and
+//! than [`MAX_AGE`], and removes those. Resources from the current run and
 //! anything not named `cx-e2e-...` are never touched.
 //!
-//! With `CX_E2E_SWEEP_MODE=run` it instead deletes every `cx-e2e-*` resource
+//! With `CX_E2E_SWEEP_MODE=run` it instead removes every `cx-e2e-*` resource
 //! that carries the *current* run id, whatever its age. CI runs that mode in
 //! a final `if: always()` step, so a cancelled job (whose drop guards never
 //! ran) still cleans up after itself.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use serde_json::Value;
@@ -24,7 +26,7 @@ use crate::harness;
 /// have its live resources swept.
 const MAX_AGE: Duration = Duration::from_secs(2 * 60 * 60);
 
-/// One sweepable resource type: how to list it and how to delete one.
+/// One sweepable resource type: how to list it and how to remove one.
 struct Sweepable {
     label: &'static str,
     list: &'static [&'static str],
@@ -130,6 +132,16 @@ const SWEEPABLES: &[Sweepable] = &[
         delete: &["recording-rules", "delete"],
     },
     Sweepable {
+        label: "configuration groups",
+        list: &["configuration-groups", "list"],
+        delete: &["configuration-groups", "archive"],
+    },
+    Sweepable {
+        label: "configuration overlays",
+        list: &["configuration-overlays", "list"],
+        delete: &["configuration-overlays", "archive"],
+    },
+    Sweepable {
         label: "tco policies",
         list: &["tco", "list"],
         delete: &["tco", "delete"],
@@ -216,8 +228,18 @@ fn items(v: &Value) -> Vec<Value> {
         .unwrap_or_default()
 }
 
-/// Delete stale `cx-e2e-*` resources from earlier runs. Never fails the
-/// suite on a single bad delete; it reports and moves on, so a flaky
+/// The configuration list commands return a per-profile token map rather
+/// than a top-level token. E2E write tests use one verified test-team profile.
+fn next_page_token(v: &Value) -> Option<String> {
+    v.get("next_page_tokens")?
+        .as_object()?
+        .values()
+        .find_map(Value::as_str)
+        .map(str::to_string)
+}
+
+/// Remove stale `cx-e2e-*` resources from earlier runs. Never fails the
+/// suite on a single bad removal; it reports and moves on, so a flaky
 /// endpoint cannot block every PR.
 #[test]
 #[ignore]
@@ -228,39 +250,65 @@ fn sweep_stale_e2e_resources() {
     let mut swept = 0;
     let mut failed = 0;
     for s in SWEEPABLES {
-        let mut args: Vec<&str> = s.list.to_vec();
-        args.extend(["-o", "json"]);
-        let out = harness::run_raw(&args);
-        if !out.status.success() {
-            eprintln!("[sweep] {}: list failed, skipping", s.label);
-            continue;
-        }
-        let Some(v) = harness::parse_json(&out.stdout) else {
-            eprintln!("[sweep] {}: list returned no JSON, skipping", s.label);
-            continue;
-        };
-        for item in items(&v) {
-            let Some(name) = str_field(
-                &item,
-                &["name", "display_name", "displayName", "title", "rule"],
-            ) else {
-                continue;
-            };
-            if !sweeps(name) {
-                continue;
+        let paginated = matches!(s.label, "configuration groups" | "configuration overlays");
+        let mut page_token = None;
+        let mut seen_tokens = HashSet::new();
+        let mut stale_resources = Vec::new();
+        loop {
+            let mut args: Vec<&str> = s.list.to_vec();
+            if paginated {
+                args.extend(["--page-size", "256"]);
+                if let Some(token) = page_token.as_deref() {
+                    args.extend(["--page-token", token]);
+                }
             }
-            let Some(id) = id_field(&item) else {
-                continue;
+            args.extend(["-o", "json"]);
+            let out = harness::run_raw(&args);
+            if !out.status.success() {
+                eprintln!("[sweep] {}: list failed, skipping", s.label);
+                break;
+            }
+            let Some(v) = harness::parse_json(&out.stdout) else {
+                eprintln!("[sweep] {}: list returned no JSON, skipping", s.label);
+                break;
             };
-            let mut del: Vec<&str> = s.delete.to_vec();
-            del.push(&id);
-            del.push("--yes");
-            let out = harness::run_raw(&del);
+            for item in items(&v) {
+                let Some(name) = str_field(
+                    &item,
+                    &["name", "display_name", "displayName", "title", "rule"],
+                ) else {
+                    continue;
+                };
+                if !sweeps(name) {
+                    continue;
+                }
+                let Some(id) = id_field(&item) else {
+                    continue;
+                };
+                stale_resources.push((name.to_string(), id));
+            }
+
+            let Some(next_token) = paginated.then(|| next_page_token(&v)).flatten() else {
+                break;
+            };
+            if !seen_tokens.insert(next_token.clone()) {
+                eprintln!("[sweep] {}: repeated page token, stopping", s.label);
+                break;
+            }
+            page_token = Some(next_token);
+        }
+        // Finish reading all pages before mutating the collection, since
+        // archiving items mid-pagination can invalidate its continuation token.
+        for (name, id) in stale_resources {
+            let mut remove: Vec<&str> = s.delete.to_vec();
+            remove.push(&id);
+            remove.push("--yes");
+            let out = harness::run_raw(&remove);
             if out.status.success() {
-                eprintln!("[sweep] deleted stale {} '{name}' ({id})", s.label);
+                eprintln!("[sweep] removed stale {} '{name}' ({id})", s.label);
                 swept += 1;
             } else {
-                eprintln!("[sweep] FAILED to delete stale {} '{name}' ({id})", s.label);
+                eprintln!("[sweep] FAILED to remove stale {} '{name}' ({id})", s.label);
                 failed += 1;
             }
         }
@@ -268,10 +316,10 @@ fn sweep_stale_e2e_resources() {
     let (s2, f2) = sweep_nested_kinds();
     swept += s2;
     failed += f2;
-    eprintln!("[sweep] done: {swept} deleted, {failed} failed");
+    eprintln!("[sweep] done: {swept} removed, {failed} failed");
     if swept > 0 || failed > 0 {
         warn(&format!(
-            "e2e sweeper found leftovers: {swept} deleted, {failed} could not be deleted"
+            "e2e sweeper found leftovers: {swept} removed, {failed} could not be removed"
         ));
     }
 }
@@ -280,7 +328,7 @@ fn sweep_stale_e2e_resources() {
 /// enrichment rules (identified by `fieldName`), integration instances and
 /// contextual-data instances (identified by a parameter), and extension
 /// deployments (identified by the application scope). Returns
-/// `(deleted, failed)`.
+/// `(removed, failed)`.
 fn sweep_nested_kinds() -> (usize, usize) {
     let mut swept = 0;
     let mut failed = 0;
@@ -288,10 +336,10 @@ fn sweep_nested_kinds() -> (usize, usize) {
         let mut full: Vec<&str> = args.to_vec();
         full.push("--yes");
         if harness::run_raw(&full).status.success() {
-            eprintln!("[sweep] deleted stale {label} '{name}'");
+            eprintln!("[sweep] removed stale {label} '{name}'");
             swept += 1;
         } else {
-            eprintln!("[sweep] FAILED to delete stale {label} '{name}'");
+            eprintln!("[sweep] FAILED to remove stale {label} '{name}'");
             failed += 1;
         }
     };
@@ -494,4 +542,14 @@ fn redact_hides_secret_fields_only() {
         "{out}"
     );
     assert_eq!(out.matches("cx??_<redacted>").count(), 2);
+}
+
+#[test]
+fn configuration_list_page_token_reads_profile_map() {
+    let response = serde_json::json!({
+        "groups": [],
+        "next_page_tokens": {"staging": "opaque-token"}
+    });
+    assert_eq!(next_page_token(&response).as_deref(), Some("opaque-token"));
+    assert_eq!(next_page_token(&serde_json::json!({"groups": []})), None);
 }

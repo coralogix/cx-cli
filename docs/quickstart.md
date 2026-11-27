@@ -261,6 +261,13 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | `cx e2m` | Manage Events2Metrics definitions |
 | `cx recording-rules` | Manage Prometheus recording rule groups |
 
+**Fleet Management**
+
+| Command | Purpose |
+|---|---|
+| `cx configuration-groups` | Manage Fleet Manager configuration groups, including their collector families and agent selectors |
+| `cx configuration-overlays` | Manage Fleet Manager collector configuration overlays, targets, and schedules |
+
 **Cost & Storage**
 
 | Command | Purpose |

@@ -10,6 +10,8 @@ description: >
   "create notification connector", "set up email alerts", "configure PagerDuty",
   "notification routing", "deploy extension", "test webhook",
   "notification preset", "test notification", "webhook actions",
+  "manage Fleet configuration groups", "manage configuration overlays",
+  "configure Fleet collectors", "update a collector configuration group",
   or wants to set up, configure, or manage the observability stack for a service or team.
 metadata:
   version: "0.1.0"
@@ -113,6 +115,31 @@ Use this skill when setting up or configuring the observability stack - saved vi
 | `cx integrations contextual-data delete <id>` | Delete contextual data integration |
 | `cx integrations contextual-data definition <id>` | Get contextual data definition |
 | `cx integrations contextual-data test <id>` | Test contextual data integration |
+
+### Fleet Manager Configuration
+
+Use these commands to manage collector configurations and overlays in Fleet Manager.
+
+| Command | Purpose |
+|---|---|
+| `cx configuration-groups list` | List configuration groups; use `--include-archived`, `--page-size`, and `--page-token` as needed |
+| `cx configuration-groups get <id>` | Get the latest group family and its remote configurations |
+| `cx configuration-groups create --from-file <file>` | Create a group with a raw Collector configuration or preset family |
+| `cx configuration-groups update <id> --update-mask <fields> --from-file <file>` | Update only the listed group fields |
+| `cx configuration-groups archive <id>` | Archive a group |
+| `cx configuration-overlays list` | List configuration overlays, including optional archived and page filters |
+| `cx configuration-overlays get <id>` | Get an overlay's configuration, targets, and schedules |
+| `cx configuration-overlays create --from-file <file>` | Create a custom configuration overlay |
+| `cx configuration-overlays update <id> --update-mask <fields> --from-file <file>` | Update only the listed overlay fields |
+| `cx configuration-overlays archive <id>` | Archive an overlay |
+
+**Update masks are required.** The API applies only fields named by `--update-mask`. A field named in the mask but omitted from the JSON body may be cleared or reset to its default, so include every intended value in the body. For example, `--update-mask description` should be paired with a body like `{"description":"Updated description"}`.
+
+**Keep changes inactive unless activation is requested.** New groups and overlays default to inactive. Activating a group family can deliver its Collector configuration to matching agents. Activating an overlay requires at least one target and can change the configuration delivered to those agents. Use a non-production profile for lifecycle testing.
+
+List responses are paginated. The JSON/TOON response includes a `next_page_tokens` map keyed by profile. Continue each profile separately with its token, keeping the same `--include-archived` and `--page-size` options. Do not reuse one profile's token for another profile.
+
+Create, update, and archive are writes that require explicit approval from the user for the specific resource and operation. Do not pass `--yes` based on your own assessment that a change is safe; wait for the user's approval, then pass `--yes` to proceed non-interactively. Archive removes a resource from default lists; retrieve archived resources with `--include-archived`. An active overlay must be deactivated before it can be archived.
 
 All commands support `-o json` for structured output and `-p <profile>` for profile selection.
 

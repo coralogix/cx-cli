@@ -16,6 +16,7 @@ Use this skill to list, inspect, create, delete, enable, and disable Coralogix a
 | `cx alerts list` | List all alert definitions | `--name <filter>` |
 | `cx alerts get <id>` | Get a single alert definition by ID | - |
 | `cx alerts create` | Create an alert from a JSON definition | `--from-file <path>` (default: stdin) |
+| `cx alerts replace <id>` | Replace an alert | `--from-file <path>` |
 | `cx alerts delete <id>` | Delete an alert | - |
 | `cx alerts enable <id>` | Enable an alert | - |
 | `cx alerts disable <id>` | Disable an alert | - |
@@ -27,7 +28,7 @@ Use this skill to list, inspect, create, delete, enable, and disable Coralogix a
 | `cx alerts suppression-rules update` | Update a suppression rule | `--from-file <path>` |
 | `cx alerts suppression-rules delete <id>` | Delete a suppression rule | - |
 
-**Output format:** append `-o json` or `-o toon` to `list`, `get`, and `create` commands for machine-readable output.
+**Output format:** append `-o json` or `-o toon` to `list`, `get`, `create` and `replace` commands for machine-readable output.
 
 **Multi-profile:** use `-p <profile>` (repeatable) to target multiple profiles simultaneously.
 

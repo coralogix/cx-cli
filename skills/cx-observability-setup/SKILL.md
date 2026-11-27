@@ -139,7 +139,7 @@ Use these commands to manage collector configurations and overlays in Fleet Mana
 
 List responses are paginated. The JSON/TOON response includes a `next_page_tokens` map keyed by profile. Continue each profile separately with its token, keeping the same `--include-archived` and `--page-size` options. Do not reuse one profile's token for another profile.
 
-Create, update, and archive require confirmation; pass `--yes` only after the requested change is understood. Archive removes a resource from default lists; retrieve archived resources with `--include-archived`. An active overlay must be deactivated before it can be archived.
+Create, update, and archive are writes that require explicit approval from the user for the specific resource and operation. Do not pass `--yes` based on your own assessment that a change is safe; wait for the user's approval, then pass `--yes` to proceed non-interactively. Archive removes a resource from default lists; retrieve archived resources with `--include-archived`. An active overlay must be deactivated before it can be archived.
 
 All commands support `-o json` for structured output and `-p <profile>` for profile selection.
 

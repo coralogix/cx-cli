@@ -124,4 +124,13 @@ mod tests {
         );
         assert_eq!(response.next_page_token.as_deref(), Some("next_page"));
     }
+
+    #[test]
+    fn list_response_accepts_missing_overlays_and_page_token() {
+        let response: ListConfigurationOverlaysResponse =
+            serde_json::from_value(json!({})).unwrap();
+
+        assert!(response.overlays.is_empty());
+        assert_eq!(response.next_page_token, None);
+    }
 }

@@ -5,11 +5,58 @@
 //! inactive. These tests cover management behavior without applying a config
 //! to a collector.
 
+use std::collections::HashSet;
+
 use crate::harness;
 use serde_json::json;
 
 const RAW_CONFIGURATION: &str = "receivers:\n  otlp:\n    protocols:\n      grpc: {}\n      http: {}\nexporters:\n  debug: {}\nservice:\n  pipelines:\n    traces:\n      receivers: [otlp]\n      exporters: [debug]\n";
 const OVERLAY_CONFIGURATION: &str = "service:\n  telemetry:\n    logs:\n      level: debug\n";
+
+/// Follow the per-profile continuation token until the resource appears or
+/// the API has no more pages. The test team may contain enough archived
+/// resources that an E2E resource is not in the first page.
+fn list_contains_id(command: &str, collection: &str, id: &str, include_archived: bool) -> bool {
+    let mut page_token = None;
+    let mut seen_tokens = HashSet::new();
+    loop {
+        let mut args = vec![command, "list"];
+        if include_archived {
+            args.push("--include-archived");
+        }
+        args.extend(["--page-size", "256"]);
+        if let Some(token) = page_token.as_deref() {
+            args.extend(["--page-token", token]);
+        }
+        args.extend(["-o", "json"]);
+
+        let response = harness::run_ok_json(&args);
+        if response
+            .get(collection)
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|items| {
+                items
+                    .iter()
+                    .any(|item| item.get("id").and_then(serde_json::Value::as_str) == Some(id))
+            })
+        {
+            return true;
+        }
+
+        let next_token = response
+            .get("next_page_tokens")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|tokens| tokens.values().find_map(serde_json::Value::as_str))
+            .map(str::to_string);
+        let Some(next_token) = next_token else {
+            return false;
+        };
+        if !seen_tokens.insert(next_token.clone()) {
+            return false;
+        }
+        page_token = Some(next_token);
+    }
+}
 
 #[test]
 #[ignore]
@@ -83,13 +130,9 @@ fn configuration_groups_lifecycle() {
     assert!(stored_configuration.contains("otlp"));
     assert!(stored_configuration.contains("debug"));
 
-    let listed = harness::run_ok_json(&["configuration-groups", "list", "-o", "json"]);
-    let listed_groups = listed["groups"]
-        .as_array()
-        .expect("group list should contain a groups array");
     assert!(
-        listed_groups.iter().any(|group| group["id"] == id),
-        "configuration group list should contain {id}: {listed}"
+        list_contains_id("configuration-groups", "groups", &id, false),
+        "configuration group list should contain {id}"
     );
     harness::run_ok_nonempty(&["configuration-groups", "get", &id]);
     harness::run_ok_nonempty(&["configuration-groups", "get", &id, "-o", "toon"]);
@@ -126,20 +169,9 @@ fn configuration_groups_lifecycle() {
         "json",
     ]);
     assert_eq!(archived["archived"], json!(true));
-    let archived_list = harness::run_ok_json(&[
-        "configuration-groups",
-        "list",
-        "--include-archived",
-        "-o",
-        "json",
-    ]);
     assert!(
-        archived_list["groups"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|group| group["id"] == id && group["archived"] == json!(true)),
-        "archived group list should contain {id}: {archived_list}"
+        list_contains_id("configuration-groups", "groups", &id, true),
+        "archived group list should contain {id}"
     );
 }
 
@@ -215,13 +247,9 @@ fn configuration_overlays_lifecycle() {
         .map(Vec::is_empty)
         .unwrap_or(true));
 
-    let listed = harness::run_ok_json(&["configuration-overlays", "list", "-o", "json"]);
-    let listed_overlays = listed["overlays"]
-        .as_array()
-        .expect("overlay list should contain an overlays array");
     assert!(
-        listed_overlays.iter().any(|overlay| overlay["id"] == id),
-        "configuration overlay list should contain {id}: {listed}"
+        list_contains_id("configuration-overlays", "overlays", &id, false),
+        "configuration overlay list should contain {id}"
     );
     harness::run_ok_nonempty(&["configuration-overlays", "get", &id]);
     harness::run_ok_nonempty(&["configuration-overlays", "get", &id, "-o", "toon"]);
@@ -263,19 +291,8 @@ fn configuration_overlays_lifecycle() {
         "json",
     ]);
     assert_eq!(archived["archived"], json!(true));
-    let archived_list = harness::run_ok_json(&[
-        "configuration-overlays",
-        "list",
-        "--include-archived",
-        "-o",
-        "json",
-    ]);
     assert!(
-        archived_list["overlays"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|overlay| overlay["id"] == id && overlay["archived"] == json!(true)),
-        "archived overlay list should contain {id}: {archived_list}"
+        list_contains_id("configuration-overlays", "overlays", &id, true),
+        "archived overlay list should contain {id}"
     );
 }

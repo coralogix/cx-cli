@@ -116,4 +116,12 @@ mod tests {
         assert_eq!(response.groups[0]["family"]["active"], false);
         assert_eq!(response.next_page_token.as_deref(), Some("next_page"));
     }
+
+    #[test]
+    fn list_response_accepts_missing_groups_and_page_token() {
+        let response: ListConfigurationGroupsResponse = serde_json::from_value(json!({})).unwrap();
+
+        assert!(response.groups.is_empty());
+        assert_eq!(response.next_page_token, None);
+    }
 }

@@ -208,3 +208,17 @@ fn schema_outputs_valid_json_with_expected_commands() {
         "agent_to_agent_mode must be reported as a boolean flag"
     );
 }
+
+#[test]
+fn root_help_lists_fleet_management_commands() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cx"))
+        .arg("--help")
+        .output()
+        .expect("failed to run cx --help");
+
+    assert!(output.status.success(), "cx --help failed");
+    let help = String::from_utf8_lossy(&output.stdout);
+    assert!(help.contains("Fleet Management:"), "help: {help}");
+    assert!(help.contains("configuration-groups"), "help: {help}");
+    assert!(help.contains("configuration-overlays"), "help: {help}");
+}

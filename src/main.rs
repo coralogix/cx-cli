@@ -242,6 +242,10 @@ struct FieldValuesArgs {
   \x1b[1me2m\x1b[0m                Manage Events2Metrics definitions
   \x1b[1mrecording-rules\x1b[0m    Manage Prometheus recording rule groups
 
+\x1b[1m\x1b[4mFleet Management:\x1b[0m
+  \x1b[1mconfiguration-groups\x1b[0m   Manage Fleet Manager configuration groups
+  \x1b[1mconfiguration-overlays\x1b[0m Manage Fleet Manager configuration overlays
+
 \x1b[1m\x1b[4mCost & Storage:\x1b[0m
   \x1b[1musage\x1b[0m              View data usage and consumption metrics
   \x1b[1mtco\x1b[0m                Manage TCO policies and settings
@@ -2425,7 +2429,7 @@ enum ConfigurationGroupsCmd {
         /// Maximum number of groups to return (1–256).
         #[arg(long, value_parser = clap::value_parser!(u16).range(1..=256))]
         page_size: Option<u16>,
-        /// Opaque token from the previous list response.
+        /// Opaque token from the previous list response for one profile.
         #[arg(long)]
         page_token: Option<String>,
     },
@@ -2471,7 +2475,7 @@ enum ConfigurationOverlaysCmd {
         /// Maximum number of overlays to return (1–256).
         #[arg(long, value_parser = clap::value_parser!(u16).range(1..=256))]
         page_size: Option<u16>,
-        /// Opaque token from the previous list response.
+        /// Opaque token from the previous list response for one profile.
         #[arg(long)]
         page_token: Option<String>,
     },

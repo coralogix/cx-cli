@@ -2,7 +2,7 @@ pub mod api;
 
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use colored::Colorize;
 use serde_json::{json, Map, Value};
 use toon_format::encode_default as toon_encode;
@@ -97,6 +97,15 @@ fn next_page_command(
     args.join(" ")
 }
 
+fn validate_page_token_for_profiles(profile_count: usize, page_token: Option<&str>) -> Result<()> {
+    if profile_count > 1 && page_token.is_some() {
+        bail!(
+            "`--page-token` is profile-specific. Continue with a separate `--profile <name>` command for each profile's token."
+        );
+    }
+    Ok(())
+}
+
 pub async fn run_list(
     targets: &[Arc<ExecutionTarget>],
     include_archived: bool,
@@ -104,6 +113,7 @@ pub async fn run_list(
     page_token: Option<&str>,
     output: OutputFormat,
 ) -> Result<()> {
+    validate_page_token_for_profiles(targets.len(), page_token)?;
     eprintln!("{}", "Fetching configuration overlays...".dimmed());
     let include_profile = targets.len() > 1;
     let page_token = page_token.map(str::to_string);
@@ -135,7 +145,7 @@ pub async fn run_list(
     if !next_page_tokens.is_empty() {
         eprintln!(
             "{}",
-            "More configuration overlays are available. Continue with --page-token <token>, reusing the same --include-archived and --page-size options; next-page tokens are included in JSON and TOON output."
+            "More configuration overlays are available. Continue separately for each profile, reusing the same --include-archived and --page-size options; next-page tokens are included in JSON and TOON output."
                 .yellow()
         );
     }
@@ -214,7 +224,9 @@ pub async fn run_get(
 
     let mut results = Vec::new();
     for (profile, mut overlay) in report_errors_and_collect_successes(per_profile)? {
-        tag_profile(&mut overlay, include_profile, &profile);
+        if include_profile {
+            render::tag_get_result(&mut overlay, &profile);
+        }
         results.push(overlay);
     }
     match output {
@@ -254,7 +266,8 @@ pub async fn run_create(
         per_profile,
         include_profile,
         output,
-        "Created configuration overlay",
+        "Created",
+        "configuration overlay",
     )
 }
 
@@ -287,7 +300,8 @@ pub async fn run_update(
         per_profile,
         include_profile,
         output,
-        "Updated configuration overlay",
+        "Updated",
+        "configuration overlay",
     )
 }
 
@@ -295,11 +309,14 @@ fn collect_write_results(
     per_profile: Vec<(String, Result<Value>)>,
     include_profile: bool,
     output: OutputFormat,
-    success: &str,
+    verb: &str,
+    kind: &str,
 ) -> Result<()> {
     let mut results = Vec::new();
     for (profile, mut value) in report_errors_and_collect_successes(per_profile)? {
-        eprintln!("{}", format!("{success} in profile '{profile}'.").green());
+        let name = value.get("name").and_then(Value::as_str);
+        let id = value.get("id").and_then(Value::as_str);
+        render::print_created(verb, kind, name, id, &profile);
         tag_profile(&mut value, include_profile, &profile);
         results.push(value);
     }
@@ -341,7 +358,7 @@ pub async fn run_archive(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::next_page_command;
+    use super::{next_page_command, validate_page_token_for_profiles};
 
     #[test]
     fn continuation_command_keeps_profile_and_page_options() {
@@ -349,5 +366,13 @@ mod tests {
             next_page_command("staging profile", true, Some(25), "opaque-token"),
             "cx --profile 'staging profile' configuration-overlays list --include-archived --page-size 25 --page-token 'opaque-token'"
         );
+    }
+
+    #[test]
+    fn page_token_is_rejected_for_multi_profile_lists() {
+        let error = validate_page_token_for_profiles(2, Some("profile-a-token")).unwrap_err();
+        assert!(error.to_string().contains("profile-specific"));
+        assert!(validate_page_token_for_profiles(1, Some("token")).is_ok());
+        assert!(validate_page_token_for_profiles(2, None).is_ok());
     }
 }

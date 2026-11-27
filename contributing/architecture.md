@@ -65,7 +65,7 @@ commands::logs::run()
 
 ### Archetype B: REST-based
 
-**Commands:** `alerts`, `cases`, `dashboards`, `metrics`, `search-fields`, `notifications`, `webhooks`, `parsing-rules`, `enrichments`, `integrations`, `iam`, `usage`, `tco`, `retentions`, `archive`, `slos`, `views`, `e2m`, `recording-rules`
+**Commands:** `alerts`, `cases`, `dashboards`, `metrics`, `search-fields`, `notifications`, `webhooks`, `parsing-rules`, `enrichments`, `integrations`, `iam`, `usage`, `tco`, `retentions`, `archive`, `slos`, `views`, `e2m`, `recording-rules`, `configuration-groups`, `configuration-overlays`
 
 These manage their own fan-out, merge, and render inline. Each subcommand function follows the same shape:
 

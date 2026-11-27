@@ -728,6 +728,42 @@ Examples:
         cmd: ParsingRulesCmd,
     },
 
+    /// Manage Fleet Manager configuration groups.
+    #[command(after_help = "\
+Examples:
+  cx configuration-groups list
+  cx configuration-groups list --include-archived --page-size 25
+  cx configuration-groups get <group-id>
+  cx configuration-groups create --from-file group.json
+  cx configuration-groups update <group-id> --update-mask name,description --from-file group.json
+  cx configuration-groups archive <group-id> --yes
+
+Create uses the complete JSON request body. Update changes only fields listed
+in `--update-mask`; a masked field omitted from the body may be cleared or reset.
+`archive` is irreversible; `get` and `list` can include archived groups.")]
+    ConfigurationGroups {
+        #[command(subcommand)]
+        cmd: ConfigurationGroupsCmd,
+    },
+
+    /// Manage Fleet Manager configuration overlays.
+    #[command(after_help = "\
+Examples:
+  cx configuration-overlays list
+  cx configuration-overlays list --include-archived --page-size 25
+  cx configuration-overlays get <overlay-id>
+  cx configuration-overlays create --from-file overlay.json
+  cx configuration-overlays update <overlay-id> --update-mask description --from-file overlay.json
+  cx configuration-overlays archive <overlay-id> --yes
+
+Create uses the complete JSON request body. Update changes only fields listed
+in `--update-mask`; a masked field omitted from the body may be cleared or reset.
+`archive` is irreversible; `get` and `list` can include archived overlays.")]
+    ConfigurationOverlays {
+        #[command(subcommand)]
+        cmd: ConfigurationOverlaysCmd,
+    },
+
     /// Manage enrichment rules and custom enrichment tables.
     #[command(after_help = "\
 Examples:
@@ -2377,6 +2413,98 @@ enum ParsingRulesCmd {
     },
     /// Show parsing rule usage limits.
     UsageLimits,
+}
+
+#[derive(Subcommand)]
+enum ConfigurationGroupsCmd {
+    /// List a page of Fleet Manager configuration groups.
+    List {
+        /// Include archived groups.
+        #[arg(long)]
+        include_archived: bool,
+        /// Maximum number of groups to return (1–256).
+        #[arg(long, value_parser = clap::value_parser!(u16).range(1..=256))]
+        page_size: Option<u16>,
+        /// Opaque token from the previous list response.
+        #[arg(long)]
+        page_token: Option<String>,
+    },
+    /// Get a configuration group by ID.
+    Get {
+        /// Configuration group ID.
+        id: String,
+        /// Include the group if it has been archived.
+        #[arg(long)]
+        include_archived: bool,
+    },
+    /// Create a configuration group from a JSON request body [requires --yes].
+    Create {
+        /// Path to the complete JSON request body. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update selected configuration group fields from a JSON request body [requires --yes].
+    Update {
+        /// Configuration group ID.
+        id: String,
+        /// Comma-separated fields to update (for example: name,description,family.active).
+        #[arg(long)]
+        update_mask: String,
+        /// Path to the complete JSON request body. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Archive a configuration group [requires --yes].
+    Archive {
+        /// Configuration group ID.
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigurationOverlaysCmd {
+    /// List a page of Fleet Manager configuration overlays.
+    List {
+        /// Include archived overlays.
+        #[arg(long)]
+        include_archived: bool,
+        /// Maximum number of overlays to return (1–256).
+        #[arg(long, value_parser = clap::value_parser!(u16).range(1..=256))]
+        page_size: Option<u16>,
+        /// Opaque token from the previous list response.
+        #[arg(long)]
+        page_token: Option<String>,
+    },
+    /// Get a configuration overlay by ID.
+    Get {
+        /// Configuration overlay ID.
+        id: String,
+        /// Include the overlay if it has been archived.
+        #[arg(long)]
+        include_archived: bool,
+    },
+    /// Create a configuration overlay from a JSON request body [requires --yes].
+    Create {
+        /// Path to the complete JSON request body. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update selected configuration overlay fields from a JSON request body [requires --yes].
+    Update {
+        /// Configuration overlay ID.
+        id: String,
+        /// Comma-separated fields to update (for example: name,description,active,custom.configuration).
+        #[arg(long)]
+        update_mask: String,
+        /// Path to the complete JSON request body. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Archive a configuration overlay [requires --yes].
+    Archive {
+        /// Configuration overlay ID.
+        id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -6192,6 +6320,128 @@ async fn main() -> Result<()> {
                 }
                 ParsingRulesCmd::UsageLimits => {
                     commands::parsing_rules::run_usage_limits(&targets, output).await?;
+                }
+            },
+
+            Commands::ConfigurationGroups { cmd } => match cmd {
+                ConfigurationGroupsCmd::List {
+                    include_archived,
+                    page_size,
+                    page_token,
+                } => {
+                    commands::configuration_groups::run_list(
+                        &targets,
+                        include_archived,
+                        page_size,
+                        page_token.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                ConfigurationGroupsCmd::Get {
+                    id,
+                    include_archived,
+                } => {
+                    commands::configuration_groups::run_get(
+                        &targets,
+                        &id,
+                        include_archived,
+                        output,
+                    )
+                    .await?;
+                }
+                ConfigurationGroupsCmd::Create { from_file } => {
+                    confirm_destructive("Create a new configuration group?", yes, agent_mode)?;
+                    commands::configuration_groups::run_create(&targets, &from_file, output)
+                        .await?;
+                }
+                ConfigurationGroupsCmd::Update {
+                    id,
+                    update_mask,
+                    from_file,
+                } => {
+                    confirm_destructive(
+                        &format!("Update configuration group '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::configuration_groups::run_update(
+                        &targets,
+                        &id,
+                        &update_mask,
+                        &from_file,
+                        output,
+                    )
+                    .await?;
+                }
+                ConfigurationGroupsCmd::Archive { id } => {
+                    confirm_destructive(
+                        &format!("Archive configuration group '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::configuration_groups::run_archive(&targets, &id).await?;
+                }
+            },
+
+            Commands::ConfigurationOverlays { cmd } => match cmd {
+                ConfigurationOverlaysCmd::List {
+                    include_archived,
+                    page_size,
+                    page_token,
+                } => {
+                    commands::configuration_overlays::run_list(
+                        &targets,
+                        include_archived,
+                        page_size,
+                        page_token.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                ConfigurationOverlaysCmd::Get {
+                    id,
+                    include_archived,
+                } => {
+                    commands::configuration_overlays::run_get(
+                        &targets,
+                        &id,
+                        include_archived,
+                        output,
+                    )
+                    .await?;
+                }
+                ConfigurationOverlaysCmd::Create { from_file } => {
+                    confirm_destructive("Create a new configuration overlay?", yes, agent_mode)?;
+                    commands::configuration_overlays::run_create(&targets, &from_file, output)
+                        .await?;
+                }
+                ConfigurationOverlaysCmd::Update {
+                    id,
+                    update_mask,
+                    from_file,
+                } => {
+                    confirm_destructive(
+                        &format!("Update configuration overlay '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::configuration_overlays::run_update(
+                        &targets,
+                        &id,
+                        &update_mask,
+                        &from_file,
+                        output,
+                    )
+                    .await?;
+                }
+                ConfigurationOverlaysCmd::Archive { id } => {
+                    confirm_destructive(
+                        &format!("Archive configuration overlay '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::configuration_overlays::run_archive(&targets, &id).await?;
                 }
             },
 

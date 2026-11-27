@@ -21,7 +21,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
     let commands = schema["commands"]
         .as_array()
         .expect("commands should be an array");
-    assert_eq!(commands.len(), 37, "expected 37 top-level commands");
+    assert_eq!(commands.len(), 39, "expected 39 top-level commands");
 
     let names: Vec<&str> = commands
         .iter()
@@ -38,6 +38,8 @@ fn schema_outputs_valid_json_with_expected_commands() {
     assert!(names.contains(&"enrichments"), "missing enrichments");
     assert!(names.contains(&"integrations"), "missing integrations");
     assert!(names.contains(&"parsing-rules"), "missing parsing-rules");
+    assert!(names.contains(&"configuration-groups"));
+    assert!(names.contains(&"configuration-overlays"));
     assert!(names.contains(&"tco"), "missing tco");
     assert!(names.contains(&"usage"), "missing usage");
     assert!(names.contains(&"archive"), "missing archive");
@@ -86,6 +88,20 @@ fn schema_outputs_valid_json_with_expected_commands() {
         .collect();
     assert!(alert_subs.contains(&"list"));
     assert!(alert_subs.contains(&"suppression-rules"));
+
+    for command_name in ["configuration-groups", "configuration-overlays"] {
+        let command = commands
+            .iter()
+            .find(|command| command["name"] == command_name)
+            .unwrap();
+        let subcommands: Vec<&str> = command["subcommands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|subcommand| subcommand["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(subcommands, ["list", "get", "create", "update", "archive"]);
+    }
 
     // Verify iam subcommands
     let iam = commands.iter().find(|c| c["name"] == "iam").unwrap();

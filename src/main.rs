@@ -4859,12 +4859,8 @@ mod managed_profile_migration_tests {
     }
 }
 
-fn main() -> Result<()> {
-    run_main()
-}
-
 #[tokio::main]
-async fn run_main() -> Result<()> {
+async fn main() -> Result<()> {
     // Handle shell completions before any stdout output.
     // When the COMPLETE env var is set (e.g. `COMPLETE=zsh cx`), this generates
     // completion scripts and exits. Otherwise it is a no-op.
@@ -4953,26 +4949,6 @@ async fn run_profiles(cmd: ProfilesCmd) -> Result<()> {
     result
 }
 
-fn local_output_format(cli: &Cli) -> Option<OutputFormat> {
-    match &cli.command {
-        Commands::Profiles { .. }
-        | Commands::Cleanup
-        | Commands::Init { .. }
-        | Commands::Skills { .. }
-        | Commands::Completions { .. } => Some(OutputFormat::Text),
-        Commands::Schema => Some(OutputFormat::Json),
-        Commands::Docs { .. }
-        | Commands::Dataprime {
-            cmd: DataprimeCmd::List { .. } | DataprimeCmd::Show { .. },
-        } => Some(cli.output.unwrap_or_else(|| {
-            config::load_config()
-                .unwrap_or_default()
-                .default_output_format
-        })),
-        _ => None,
-    }
-}
-
 async fn run(matches: clap::ArgMatches) -> Result<()> {
     let cli = Cli::from_arg_matches(&matches)?;
     // A managed credential-storage policy applies before every executed CLI
@@ -4982,10 +4958,6 @@ async fn run(matches: clap::ArgMatches) -> Result<()> {
     if should_migrate_command(&cli.command) {
         config::migrate_managed_profiles_to_os_store()?;
     }
-    let risky_write = cli.command.is_risky()
-        && safety::get_leaf_subcommand_name(&matches)
-            .as_deref()
-            .is_some_and(safety::is_write_verb);
     let yes = cli.yes;
     // Load global config early for read-only / risky / olly gating.
     let global_cfg_early = config::load_config().unwrap_or_default();
@@ -5014,11 +4986,15 @@ async fn run(matches: clap::ArgMatches) -> Result<()> {
     }
 
     // Risky command gating (iam, archive write operations).
-    if risky_write && !global_cfg_early.allow_risky_commands {
-        bail!(
-            "Risky write operation blocked by global configuration.\n\
-             Set allow_risky_commands = true in ~/.cx/config.toml to enable."
-        );
+    if cli.command.is_risky() && !global_cfg_early.allow_risky_commands {
+        if let Some(leaf) = safety::get_leaf_subcommand_name(&matches) {
+            if safety::is_write_verb(&leaf) {
+                bail!(
+                    "Risky write operation blocked by global configuration.\n\
+                     Set allow_risky_commands = true in ~/.cx/config.toml to enable."
+                );
+            }
+        }
     }
 
     // Olly gating (olly ask).
@@ -5028,8 +5004,6 @@ async fn run(matches: clap::ArgMatches) -> Result<()> {
              To enable it, set olly_enabled = true in ~/.cx/config.toml."
         );
     }
-
-    let local_output = local_output_format(&cli);
 
     // Profiles command is usually handled by the early ProfilesCli parser above,
     // but when global flags precede `profiles` (e.g. `cx --read-only profiles list`),
@@ -5068,7 +5042,9 @@ async fn run(matches: clap::ArgMatches) -> Result<()> {
     }
 
     // Docs commands fetch public documentation — no API credentials.
-    if let (Commands::Docs { cmd }, Some(output)) = (&cli.command, local_output) {
+    if let Commands::Docs { ref cmd } = cli.command {
+        let global_config = config::load_config().unwrap_or_default();
+        let output = cli.output.unwrap_or(global_config.default_output_format);
         let result = match cmd {
             DocsCmd::Search { query, limit } => {
                 commands::docs::run_search(query, *limit, output).await
@@ -5185,17 +5161,21 @@ async fn run(matches: clap::ArgMatches) -> Result<()> {
         return result;
     }
 
-    // Dataprime list/show don't need API credentials.
-    if let (Commands::Dataprime { cmd }, Some(output)) = (&cli.command, local_output) {
-        let result = match cmd {
-            DataprimeCmd::List { filter, name } => {
-                commands::dataprime::run_list(*filter, name.as_deref(), output)
-            }
-            DataprimeCmd::Show { name } => commands::dataprime::run_help(name, output),
-            DataprimeCmd::Query { .. } => unreachable!("query requires profile resolution"),
-        };
-        update_check::maybe_print_notice(output);
-        return result;
+    // Dataprime list/show don't need API credentials - handle them early.
+    if let Commands::Dataprime { ref cmd } = cli.command {
+        if matches!(cmd, DataprimeCmd::List { .. } | DataprimeCmd::Show { .. }) {
+            let global_config = config::load_config().unwrap_or_default();
+            let output = cli.output.unwrap_or(global_config.default_output_format);
+            let result = match cmd {
+                DataprimeCmd::List { filter, name } => {
+                    commands::dataprime::run_list(*filter, name.as_deref(), output)
+                }
+                DataprimeCmd::Show { name } => commands::dataprime::run_help(name, output),
+                DataprimeCmd::Query { .. } => unreachable!(),
+            };
+            update_check::maybe_print_notice(output);
+            return result;
+        }
     }
 
     // When the user names a profile explicitly via --profile but did NOT pass
@@ -5314,9 +5294,7 @@ async fn run(matches: clap::ArgMatches) -> Result<()> {
     // Report onboarding for any profile whose report hasn't gone through yet
     // (see `onboarding`); a no-op once settled. Runs alongside the command and
     // is awaited below.
-    let onboarding_task = tokio::spawn(telemetry::with_current_context(
-        onboarding::report_pending(targets.clone()),
-    ));
+    let onboarding_task = tokio::spawn(onboarding::report_pending(targets.clone()));
 
     // Wrap the dispatch in an async block so we can capture its Result and
     // always run the update notice afterwards (even on error).

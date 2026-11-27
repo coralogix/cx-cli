@@ -4,8 +4,6 @@ use std::future::Future;
 
 use cli_otel::{ClassifyOutcome, CommandSession, Config, Outcome};
 
-pub use cli_otel::with_current_context;
-
 pub async fn run<F>(
     build_command: impl FnOnce() -> clap::Command,
     dispatch: impl FnOnce(clap::ArgMatches) -> F,
@@ -20,7 +18,7 @@ where
     let matches = match session.parse(build_command()) {
         Ok(matches) => matches,
         Err(error) => {
-            session.finish(Outcome::completed(error.exit_code())).await;
+            session.finish(Outcome::from_parse_error(&error)).await;
             error.exit();
         }
     };

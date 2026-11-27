@@ -15,9 +15,6 @@ jobs:
   test:
     name: Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: read
-      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -46,21 +43,10 @@ jobs:
         with:
           key: ${{ matrix.os }}
 
-      - uses: jfrog/setup-jfrog-cli@v4
-        id: jfrog
-        if: steps.filter.outputs.code == 'true'
-        env:
-          JF_URL: https://cgx.jfrog.io
-        with:
-          oidc-provider-name: github
-          oidc-audience: jfrog-github
-
       - name: Install Linux system dependencies
         if: steps.filter.outputs.code == 'true' && runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
 
       - name: Run tests
         if: steps.filter.outputs.code == 'true'
-        env:
-          CARGO_REGISTRIES_CORALOGIX_INTERNAL_TOKEN: Bearer ${{ steps.jfrog.outputs.oidc-token }}
         run: cargo test --locked

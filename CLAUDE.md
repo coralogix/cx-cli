@@ -150,7 +150,7 @@ This per-command layout drives `CODEOWNERS`: each domain in the file maps direct
 
 ### Config & Environment
 
-Config lives in `~/.cx/`. Environment variables `CX_PROFILE`, `CX_API_KEY`, `CX_REGION`, `OPENAI_API_KEY` override profile settings. Opt-in CLI telemetry uses `CX_TELEMETRY`, standard `OTEL_EXPORTER_OTLP_*` settings or `CX_OTLP_ENDPOINT` / `CX_OTLP_API_KEY`, optional `CX_TELEMETRY_FAILURE_LOGS`, and `DO_NOT_TRACK` (see [docs/cli-telemetry.md](docs/cli-telemetry.md)); `telemetry = false` in `config.toml` opts out.
+Config lives in `~/.cx/`. Environment variables `CX_PROFILE`, `CX_API_KEY`, `CX_REGION`, `OPENAI_API_KEY` override profile settings. Opt-in CLI telemetry uses `CX_TELEMETRY`, standard `OTEL_EXPORTER_OTLP_*` settings or `CX_OTLP_ENDPOINT` / `CX_OTLP_API_KEY`, and `DO_NOT_TRACK` (see [docs/cli-telemetry.md](docs/cli-telemetry.md)).
 
 ### Skills
 

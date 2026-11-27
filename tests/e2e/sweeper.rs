@@ -276,8 +276,7 @@ fn sweep_stale_e2e_resources() {
                 let Some(name) = str_field(
                     &item,
                     &["name", "display_name", "displayName", "title", "rule"],
-                )
-                else {
+                ) else {
                     continue;
                 };
                 if !sweeps(name) {

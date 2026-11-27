@@ -22,6 +22,7 @@ Coralogix substitutes these dashboard-only variables into widget PromQL at rende
 
 - Wrong in a `lineChart`: `rate(foo_total[${__range}])`. Every point is then the average over the whole dashboard range (48 hours by default): a nearly flat line that hides spikes and the current rate.
 - Wrong anywhere: `increase(foo_total[$__range])` - missing braces; Coralogix drops it.
+- Wrong in a `lineChart`: `increase(foo_total[${__rate_interval}])`. That window is longer than the step, so neighbouring points count the same events twice. `increase` over `${__interval}` gives the count per step, also when the step is shorter than the scrape interval.
 - Wrong: `increase(foo_total[5m])` - hard-codes a 5-minute window that ignores the time picker and the chart's resolution.
 
 Use fixed ranges (`[5m]`, `[1h]`) only when the panel intentionally shows a rolling window independent of the dashboard time picker (rare; document it in the panel title).
@@ -66,7 +67,7 @@ If you're unsure, consult the `cx-dataprime` skill reference rather than guessin
 
 The full PromQL reference is in the `cx-metrics-query` skill. The patterns below show up in almost every dashboard and are the ones to copy-paste.
 
-The patterns serve single-value widgets, so they use `${__range}`. In a `lineChart`, replace `[${__range}]` with `[${__rate_interval}]` inside `rate` or `[${__interval}]` inside `increase` (§1).
+The patterns serve single-value widgets, so they use `${__range}`. In a `lineChart`, replace `[${__range}]` with `[${__rate_interval}]` inside `rate` or `[${__interval}]` inside `increase` (§1). The success-rate pattern has its own `lineChart` form below.
 
 **Histogram average over the dashboard range**:
 
@@ -90,7 +91,7 @@ histogram_quantile(0.95,
 sum by (account_id) (increase(foo_total[${__range}]))
 ```
 
-**Success rate (%) with safe denominator** (wrap denominators in `clamp_min(..., 1)`):
+**Success rate (%) with safe denominator**, single-value widgets (wrap denominators in `clamp_min(..., 1)`):
 
 ```
 100 *
@@ -100,6 +101,18 @@ sum by (account_id) (increase(foo_total[${__range}]))
     sum(increase(foo_success_total[${__range}]))
     + sum(increase(foo_failure_total[${__range}])),
     1
+  )
+```
+
+**Success rate (%) over time** (`lineChart`). Leave the denominator unclamped: a step with no requests then leaves a gap. `clamp_min(..., 1)` here draws an idle step as 0% and pulls a low-traffic line below 100%:
+
+```
+100 *
+  sum(rate(foo_success_total[${__rate_interval}]))
+  /
+  (
+    sum(rate(foo_success_total[${__rate_interval}]))
+    + sum(rate(foo_failure_total[${__rate_interval}]))
   )
 ```
 
@@ -173,7 +186,7 @@ The dashboard-analysis counterpart to this skill lives at `cx-olly/apps/api/src/
 - [ ] DataPrime widget queries start with `source logs` or `source spans` (required for dashboard widgets; stripped during Phase 5 CLI verification).
 - [ ] DataPrime `contains` is written as `.contains(...)`.
 - [ ] DataPrime severity enums are unquoted (`ERROR`, `CRITICAL`, …).
-- [ ] Success-rate denominators wrapped in `clamp_min(..., 1)`.
+- [ ] Success-rate denominators in single-value widgets wrapped in `clamp_min(..., 1)`; unclamped in a `lineChart`.
 - [ ] Histogram queries use the correct suffix (`_sum`, `_count`, `_bucket`).
 - [ ] No invented metric names - every PromQL metric appeared in `cx metrics search` during Phase 1.
 - [ ] Widget queries remain valid **without** the dashboard-level `filters` (Coralogix/Olly inject them at render time).

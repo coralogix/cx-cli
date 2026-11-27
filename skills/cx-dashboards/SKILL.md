@@ -258,7 +258,7 @@ Run this checklist against the final JSON. Fix and re-check if any item fails be
 - [ ] `promqlQueryType` is `PROM_QL_QUERY_TYPE_INSTANT` for single-value widgets (gauge, pieChart, dynamic table). Omitted for `lineChart`.
 - [ ] DataPrime log queries use `$d.<field>` / `$l.applicationname` / unquoted severity enums (full rules: [`references/dataprime-reference.md`](references/dataprime-reference.md)).
 - [ ] Every DataPrime widget query starts with `source logs` or `source spans` (dashboard widgets require the source prefix; Phase 5 verification strips it before handing the pipeline to `cx logs` / `cx spans`).
-- [ ] Success-rate denominators wrapped in `clamp_min(..., 1)`.
+- [ ] Success-rate denominators in single-value widgets wrapped in `clamp_min(..., 1)`; unclamped in a `lineChart`.
 - [ ] Histogram queries use the correct suffix (`_sum`, `_count`, `_bucket`).
 - [ ] Widget queries are valid **without** the dashboard-level `filters` - Coralogix injects them at render time.
 

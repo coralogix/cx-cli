@@ -24,8 +24,6 @@ Parse `relativeTimeFrame` from the draft (default `"172800s"` = 48h) into a huma
 
 For every widget whose definition contains a `promqlQuery`, substitute `${__range}` in the expression with `[$RANGE]` (e.g. `[48h]`), and `${__rate_interval}` / `${__interval}` (used by `lineChart` widgets) with `[5m]`. Leave any other fixed window (`[5m]`, `[1h]`) untouched - those were placed intentionally for sliding-rate panels.
 
-Run all the queries in one shell command rather than one tool call per query: put the substituted expressions in a file or a loop, print each widget's title before its result, and read the combined output once. Re-run only the ones that failed.
-
 **Instant-style widgets** (`gauge` / `pieChart` / dynamic table with `promqlQueryType: PROM_QL_QUERY_TYPE_INSTANT`):
 
 ```bash

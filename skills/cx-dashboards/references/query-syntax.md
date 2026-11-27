@@ -12,7 +12,7 @@ For the underlying query languages, use the sibling skills:
 
 ## 1. The dashboard time variables: `${__range}`, `${__interval}`, `${__rate_interval}`
 
-Coralogix substitutes these into widget PromQL at render time. They are dashboard-only variables, not PromQL features. Which one a range vector takes depends on what the widget draws:
+Coralogix substitutes these dashboard-only variables into widget PromQL at render time. What the widget draws decides which one a range vector takes:
 
 | Widget draws | Variable | Resolves to | Example |
 |---|---|---|---|
@@ -20,15 +20,15 @@ Coralogix substitutes these into widget PromQL at render time. They are dashboar
 | A line over time, with `rate` / `irate` (`lineChart`) | `${__rate_interval}` | the chart's step plus one scrape, at least four scrapes | `sum by (status) (rate(foo_total[${__rate_interval}]))` |
 | A line over time, with `increase` / `*_over_time` (`lineChart`) | `${__interval}` | the chart's step | `sum(increase(foo_total[${__interval}]))` |
 
-- Wrong in a `lineChart`: `rate(foo_total[${__range}])`. Every point is then the average over the whole dashboard range (48 hours by default), so the line is nearly flat, hides spikes, and does not show the current rate.
+- Wrong in a `lineChart`: `rate(foo_total[${__range}])`. Every point is then the average over the whole dashboard range (48 hours by default): a nearly flat line that hides spikes and the current rate.
 - Wrong anywhere: `increase(foo_total[$__range])` - missing braces; Coralogix drops it.
-- Wrong: `increase(foo_total[5m])` - hard-codes a 5-minute window; it does not follow the time picker or the chart's resolution.
+- Wrong: `increase(foo_total[5m])` - hard-codes a 5-minute window that ignores the time picker and the chart's resolution.
 
 Use fixed ranges (`[5m]`, `[1h]`) only when the panel intentionally shows a rolling window independent of the dashboard time picker (rare; document it in the panel title).
 
 ### Verifying queries that use these variables with the CLI
 
-`cx metrics query` and `cx metrics query-range` don't expand them (it's a dashboard-side substitution). During Phase 5 verification, swap `${__range}` for the concrete token that matches the dashboard's `relativeTimeFrame` (e.g. `[48h]` for the default `"172800s"`), and swap `${__rate_interval}` / `${__interval}` for `[5m]`. Restore the variables in the JSON before deploy.
+`cx metrics query` and `cx metrics query-range` pass the variables through unexpanded (the substitution is dashboard-side). During Phase 5 verification, swap `${__range}` for the concrete token that matches the dashboard's `relativeTimeFrame` (e.g. `[48h]` for the default `"172800s"`), and swap `${__rate_interval}` / `${__interval}` for `[5m]`. Restore the variables in the JSON before deploy.
 
 ---
 
@@ -66,13 +66,7 @@ If you're unsure, consult the `cx-dataprime` skill reference rather than guessin
 
 The full PromQL reference is in the `cx-metrics-query` skill. The patterns below show up in almost every dashboard and are the ones to copy-paste.
 
-The patterns are written for single-value widgets, so they use `${__range}`. For the same expression in a `lineChart`, replace `[${__range}]` with `[${__rate_interval}]` (inside `rate`) or `[${__interval}]` (inside `increase`), as in §1:
-
-```
-histogram_quantile(0.95,
-  sum by (le, label) (rate(foo_latency_bucket[${__rate_interval}]))
-)
-```
+The patterns serve single-value widgets, so they use `${__range}`. In a `lineChart`, replace `[${__range}]` with `[${__rate_interval}]` inside `rate` or `[${__interval}]` inside `increase` (§1).
 
 **Histogram average over the dashboard range**:
 

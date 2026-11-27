@@ -20,6 +20,7 @@ pub mod render;
 pub mod safety;
 pub mod serde_helpers;
 pub mod spill;
+pub mod telemetry;
 pub mod tier;
 pub mod time;
 pub mod update_check;

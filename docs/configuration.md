@@ -588,6 +588,10 @@ only controls where new profiles store credentials:
 | `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
 | `CX_NO_CONSOLE_LINK` | `no_console_link` in global config (accepts `1`, `true`, `yes`, `on`) |
 | `CX_HOME` | Parent directory for cx configuration (`$CX_HOME/.cx`) |
+| `CX_TELEMETRY` | Enables opt-in CLI execution telemetry when set to a truthy value (`1`/`true`/`on`/`yes`). See [CLI telemetry](cli-telemetry.md). |
+| `CX_OTLP_ENDPOINT` | cx-specific OTLP/HTTP traces URL. `https` for remote; `http` only for loopback. |
+| `CX_OTLP_API_KEY` | Bearer token for the cx-specific telemetry endpoint (attached only on `https`). |
+| `DO_NOT_TRACK` | Set to `1` to disable CLI telemetry, even when `CX_TELEMETRY` is enabled. |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.
 

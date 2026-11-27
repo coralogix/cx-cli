@@ -18,6 +18,7 @@ use coralogix_cli::execution::build_targets;
 use coralogix_cli::onboarding;
 use coralogix_cli::safety;
 use coralogix_cli::safety::confirm_destructive;
+use coralogix_cli::telemetry;
 use coralogix_cli::update_check;
 use coralogix_cli::Tier;
 
@@ -5021,31 +5022,61 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
-    // Kick off the background version check.  The result is written to
-    // ~/.cx/state.json and read back on the next command invocation.
-    // For fast local commands the task may be cancelled before it finishes
-    // writing (intentional race — same model as `gh`); API commands take long
-    // enough that the fetch always completes in time.
-    let _update_task = tokio::spawn(update_check::fetch_if_stale());
-
-    // Check if this is a profiles command - use separate parser without global API flags.
-    // Only works when `profiles` is the first arg (no global flags before it).
-    if matches!(
+    // Profiles has a legacy parser without global API flags. Global flags
+    // before the subcommand select the regular parser.
+    let legacy_profiles = matches!(
         std::env::args().nth(1).as_deref(),
         Some("profiles" | "profile")
-    ) {
-        let profile_matches = ProfilesCli::command().get_matches();
-        let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
-        let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
-        // Deleting is how a user removes a profile that cannot be migrated.
-        if should_migrate_profiles_command(&cmd) {
-            config::migrate_managed_profiles_to_os_store()?;
+    );
+    let command = || {
+        // Kick off the version check even for help and usage errors.
+        let _update_task = tokio::spawn(update_check::fetch_if_stale());
+        if legacy_profiles {
+            return ProfilesCli::command();
         }
-        let result = match cmd {
-            ProfilesCmd::List { label } => commands::profiles::run_list(label),
-            ProfilesCmd::Add {
-                name,
-                name_flag,
+        let command = Cli::command();
+        if banner::should_show() {
+            command.before_help(banner::render()).help_template(
+                "{before-help}\n{usage-heading} {usage}{after-help}\n\n\x1b[1m\x1b[4mGlobal Options:\x1b[0m\n{options}",
+            )
+        } else {
+            command
+        }
+    };
+    telemetry::run(command, |matches| async move {
+        if legacy_profiles {
+            let profiles_cli = ProfilesCli::from_arg_matches(&matches)?;
+            let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
+            run_profiles(cmd).await
+        } else {
+            Box::pin(run(matches)).await
+        }
+    })
+    .await
+}
+
+async fn run_profiles(cmd: ProfilesCmd) -> Result<()> {
+    // Deleting is how a user removes a profile that cannot be migrated.
+    if should_migrate_profiles_command(&cmd) {
+        config::migrate_managed_profiles_to_os_store()?;
+    }
+    let result = match cmd {
+        ProfilesCmd::List { label } => commands::profiles::run_list(label),
+        ProfilesCmd::Add {
+            name,
+            name_flag,
+            url,
+            region,
+            api_key,
+            oauth,
+            signup,
+            force,
+            set_default,
+            disable_olly,
+            label,
+        } => {
+            commands::profiles::run_add(commands::profiles::AddArgs {
+                name: name.or(name_flag),
                 url,
                 region,
                 api_key,
@@ -5054,44 +5085,23 @@ async fn main() -> Result<()> {
                 force,
                 set_default,
                 disable_olly,
-                label,
-            } => {
-                commands::profiles::run_add(commands::profiles::AddArgs {
-                    name: name.or(name_flag),
-                    url,
-                    region,
-                    api_key,
-                    oauth,
-                    signup,
-                    force,
-                    set_default,
-                    disable_olly,
-                    quick: false,
-                    labels: (!label.is_empty()).then_some(label),
-                })
-                .await
-            }
-            ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
-            ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
-            ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
-            #[cfg(target_os = "macos")]
-            ProfilesCmd::Migrate => commands::profiles::run_migrate(),
-            ProfilesCmd::Labels { cmd } => cmd.run(),
-        };
-        update_check::maybe_print_notice(OutputFormat::Text);
-        return result;
-    }
-    // When global flags precede `profiles` (e.g. `cx --read-only profiles list`),
-    // the early check above misses it. The main Cli parser handles it below.
+                quick: false,
+                labels: (!label.is_empty()).then_some(label),
+            })
+            .await
+        }
+        ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
+        ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
+        ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
+        #[cfg(target_os = "macos")]
+        ProfilesCmd::Migrate => commands::profiles::run_migrate(),
+        ProfilesCmd::Labels { cmd } => cmd.run(),
+    };
+    update_check::maybe_print_notice(OutputFormat::Text);
+    result
+}
 
-    let mut cmd = Cli::command();
-    if banner::should_show() {
-        cmd = cmd.before_help(banner::render()).help_template(
-            "{before-help}\n{usage-heading} {usage}{after-help}\n\n\x1b[1m\x1b[4mGlobal Options:\x1b[0m\n{options}",
-        );
-    }
-
-    let matches = cmd.get_matches();
+async fn run(matches: clap::ArgMatches) -> Result<()> {
     let cli = Cli::from_arg_matches(&matches)?;
     // A managed credential-storage policy applies before every executed CLI
     // command, including local commands that do not otherwise resolve API
@@ -5180,45 +5190,7 @@ async fn main() -> Result<()> {
                    cx profiles labels add <name> --label <label>"
             );
         }
-        let result = match cmd {
-            ProfilesCmd::List { label } => commands::profiles::run_list(label),
-            ProfilesCmd::Add {
-                name,
-                name_flag,
-                url,
-                region,
-                api_key,
-                oauth,
-                signup,
-                force,
-                set_default,
-                disable_olly,
-                label,
-            } => {
-                commands::profiles::run_add(commands::profiles::AddArgs {
-                    name: name.or(name_flag),
-                    url,
-                    region,
-                    api_key,
-                    oauth,
-                    signup,
-                    force,
-                    set_default,
-                    disable_olly,
-                    quick: false,
-                    labels: (!label.is_empty()).then_some(label),
-                })
-                .await
-            }
-            ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
-            ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
-            ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
-            #[cfg(target_os = "macos")]
-            ProfilesCmd::Migrate => commands::profiles::run_migrate(),
-            ProfilesCmd::Labels { cmd } => cmd.run(),
-        };
-        update_check::maybe_print_notice(OutputFormat::Text);
-        return result;
+        return run_profiles(cmd).await;
     }
 
     // Docs commands fetch public documentation — no API credentials.
@@ -5351,13 +5323,11 @@ async fn main() -> Result<()> {
                     commands::dataprime::run_list(*filter, name.as_deref(), output)
                 }
                 DataprimeCmd::Show { name } => commands::dataprime::run_help(name, output),
-                // Query needs credentials - handled in the main match below.
                 DataprimeCmd::Query { .. } => unreachable!(),
             };
             update_check::maybe_print_notice(output);
             return result;
         }
-        // DataprimeCmd::Query needs credentials - fall through.
     }
 
     // When the user names a profile explicitly via --profile but did NOT pass
@@ -5400,7 +5370,7 @@ async fn main() -> Result<()> {
             // The message already names the fix (`cx profiles list`, `cx
             // profiles add --label`); exit here so it is not printed twice.
             eprintln!("{error}");
-            std::process::exit(1);
+            return Err(telemetry::ReportedFailure::ProfileSelection.into());
         }
     };
 
@@ -5453,7 +5423,7 @@ async fn main() -> Result<()> {
                     // would dump the anyhow config-resolution chain (with a second,
                     // contradicting `cx profiles add` instruction) after the
                     // guidance. The two lines above are the entire first-run story.
-                    std::process::exit(1);
+                    return Err(telemetry::ReportedFailure::Configuration.into());
                 }
                 // The error already names the fix (for example `cx profiles add
                 // <name>`). Exit here instead of returning it: propagating it
@@ -5462,7 +5432,7 @@ async fn main() -> Result<()> {
                 // specific instruction already in the error. `{:?}` keeps a
                 // single copy of the cause chain (parse errors, and so on).
                 eprintln!("Configuration error: {error:?}");
-                std::process::exit(1);
+                return Err(telemetry::ReportedFailure::Configuration.into());
             }
         };
 

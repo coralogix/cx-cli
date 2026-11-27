@@ -45,7 +45,7 @@ If folder creation fails (most common cause: API key missing the `team-dashboard
 2. Deploy into the chosen folder (omit `--folder` for root):
 
    ```bash
-   cx dashboards create --from-file /tmp/cx-dashboard-<slug>.json --folder <folder-id>
+   cx dashboards create --from-file /tmp/cx-dashboard-<slug>.json --folder <folder-id> --yes
    ```
 
 The CLI generates the `requestId` envelope automatically and prints the created dashboard ID and name on success. Pipe into `-o json` or `-o toon` for structured output.

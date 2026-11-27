@@ -10,19 +10,25 @@ For the underlying query languages, use the sibling skills:
 
 ---
 
-## 1. The `${__range}` dashboard variable
+## 1. The dashboard time variables: `${__range}`, `${__interval}`, `${__rate_interval}`
 
-Coralogix injects the dashboard-level time range as `${__range}` - this is a dashboard-only variable, not a PromQL feature.
+Coralogix substitutes these into widget PromQL at render time. They are dashboard-only variables, not PromQL features. Which one a range vector takes depends on what the widget draws:
 
-- Correct: `increase(foo_total[${__range}])`
-- Wrong: `increase(foo_total[$__range])` - missing braces; Coralogix drops it
-- Wrong: `increase(foo_total[5m])` - hard-codes a 5-minute window; the dashboard time picker has no effect
+| Widget draws | Variable | Resolves to | Example |
+|---|---|---|---|
+| One value for the whole time range (`gauge`, `pieChart`, dynamic `table` or `stat`, instant query) | `${__range}` | the dashboard time range | `sum(increase(foo_total[${__range}]))` |
+| A line over time, with `rate` / `irate` (`lineChart`) | `${__rate_interval}` | the chart's step plus one scrape, at least four scrapes | `sum by (status) (rate(foo_total[${__rate_interval}]))` |
+| A line over time, with `increase` / `*_over_time` (`lineChart`) | `${__interval}` | the chart's step | `sum(increase(foo_total[${__interval}]))` |
+
+- Wrong in a `lineChart`: `rate(foo_total[${__range}])`. Every point is then the average over the whole dashboard range (48 hours by default), so the line is nearly flat, hides spikes, and does not show the current rate.
+- Wrong anywhere: `increase(foo_total[$__range])` - missing braces; Coralogix drops it.
+- Wrong: `increase(foo_total[5m])` - hard-codes a 5-minute window; it does not follow the time picker or the chart's resolution.
 
 Use fixed ranges (`[5m]`, `[1h]`) only when the panel intentionally shows a rolling window independent of the dashboard time picker (rare; document it in the panel title).
 
-### Verifying `${__range}` queries with the CLI
+### Verifying queries that use these variables with the CLI
 
-`cx metrics query` doesn't expand `${__range}` (it's a dashboard-side substitution). During Phase 5 verification, swap `${__range}` for the concrete token that matches the dashboard's `relativeTimeFrame` (e.g. `[48h]` for the default `"172800s"`). Restore `${__range}` in the JSON before deploy.
+`cx metrics query` and `cx metrics query-range` don't expand them (it's a dashboard-side substitution). During Phase 5 verification, swap `${__range}` for the concrete token that matches the dashboard's `relativeTimeFrame` (e.g. `[48h]` for the default `"172800s"`), and swap `${__rate_interval}` / `${__interval}` for `[5m]`. Restore the variables in the JSON before deploy.
 
 ---
 
@@ -59,6 +65,14 @@ If you're unsure, consult the `cx-dataprime` skill reference rather than guessin
 ## 4. PromQL idioms that recur in dashboards
 
 The full PromQL reference is in the `cx-metrics-query` skill. The patterns below show up in almost every dashboard and are the ones to copy-paste.
+
+The patterns are written for single-value widgets, so they use `${__range}`. For the same expression in a `lineChart`, replace `[${__range}]` with `[${__rate_interval}]` (inside `rate`) or `[${__interval}]` (inside `increase`), as in §1:
+
+```
+histogram_quantile(0.95,
+  sum by (le, label) (rate(foo_latency_bucket[${__rate_interval}]))
+)
+```
 
 **Histogram average over the dashboard range**:
 
@@ -160,7 +174,7 @@ The dashboard-analysis counterpart to this skill lives at `cx-olly/apps/api/src/
 
 ## 7. Dashboard-syntax checklist (apply before Phase 5)
 
-- [ ] PromQL range vectors inside widgets use `[${__range}]`.
+- [ ] PromQL range vectors use `[${__range}]` in single-value widgets, and `[${__rate_interval}]` / `[${__interval}]` in `lineChart` widgets (§1).
 - [ ] `promqlQueryType` is `PROM_QL_QUERY_TYPE_INSTANT` for `gauge` / `pieChart` / dynamic table; omitted for `lineChart`.
 - [ ] DataPrime widget queries start with `source logs` or `source spans` (required for dashboard widgets; stripped during Phase 5 CLI verification).
 - [ ] DataPrime `contains` is written as `.contains(...)`.
